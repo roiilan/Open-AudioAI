@@ -59,15 +59,12 @@ A secure Chrome extension that enables ChatGPT users to upload audio files, tran
      }
      ```
 
-3. **Configure Python Server URL**
-   - Update `js/popup.js` line 43:
+3. **Server Configuration**
+   - The extension is already configured for local development:
      ```javascript
-     baseUrl: 'https://your-server-url.com'
+     baseUrl: 'http://localhost:8000'
      ```
-   - Update `background.js` line 247:
-     ```javascript
-     const serverUrl = 'https://your-server-url.com';
-     ```
+   - Your Python server should run on port 8000 with the `/transcribe` endpoint
 
 4. **Add Extension Icons**
    - Add icon files to the `icons/` directory:

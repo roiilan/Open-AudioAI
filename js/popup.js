@@ -42,7 +42,7 @@ const SecurityUtils = {
 
 // API Service for secure communication
 const ApiService = {
-    baseUrl: 'YOUR_PYTHON_SERVER_URL', // Replace with actual server URL
+    baseUrl: 'http://localhost:8000', // Local development server
 
     async makeSecureRequest(endpoint, data, token) {
         const nonce = SecurityUtils.generateNonce();

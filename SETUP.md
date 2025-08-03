@@ -40,10 +40,11 @@ This guide will help you configure the Open AudioAi Chrome extension for your en
 ### 2. Extension Configuration
 
 #### Update manifest.json
+The OAuth client ID is already configured:
 ```json
 {
   "oauth2": {
-    "client_id": "YOUR_ACTUAL_CLIENT_ID.apps.googleusercontent.com",
+    "client_id": "174350614321-jbjk9v1hgfs9c08iaj0pngrv2tj4m8ct.apps.googleusercontent.com",
     "scopes": [
       "openid",
       "email", 
@@ -54,17 +55,17 @@ This guide will help you configure the Open AudioAi Chrome extension for your en
 ```
 
 #### Update js/popup.js
-Find line 43 and replace:
+Line 43 is already configured for local development:
 ```javascript
 // Line 43
-baseUrl: 'https://your-actual-server-url.com'
+baseUrl: 'http://localhost:8000'
 ```
 
 #### Update background.js
-Find line 247 and replace:
+Line 247 is already configured for local development:
 ```javascript
 // Line 247
-const serverUrl = 'https://your-actual-server-url.com';
+const serverUrl = 'http://localhost:8000';
 ```
 
 ### 3. Server Configuration

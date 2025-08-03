@@ -1,0 +1,32 @@
+/* Content CSS for Open AudioAi ChatGPT Integration */
+/* Minimal styles to avoid conflicts with ChatGPT's interface */
+
+/* Notification styles injected by content script */
+.open-audioai-notification {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif !important;
+    z-index: 999999 !important;
+    pointer-events: auto !important;
+    box-sizing: border-box !important;
+}
+
+/* Ensure our notifications appear above ChatGPT's interface */
+.open-audioai-notification * {
+    box-sizing: border-box !important;
+}
+
+/* Prevent ChatGPT styles from affecting our elements */
+.open-audioai-notification p,
+.open-audioai-notification div,
+.open-audioai-notification span {
+    margin: 0 !important;
+    padding: 0 !important;
+    line-height: normal !important;
+}
+
+/* Accessibility improvements */
+@media (prefers-reduced-motion: reduce) {
+    .open-audioai-notification {
+        animation: none !important;
+        transition: none !important;
+    }
+}

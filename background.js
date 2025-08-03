@@ -241,7 +241,7 @@ async function checkApiHealth() {
     try {
         // This would check your Python server health
         // Replace with your actual server URL
-        const serverUrl = 'YOUR_PYTHON_SERVER_URL';
+        const serverUrl = 'http://localhost:8000';
         
         const response = await fetch(`${serverUrl}/health`, {
             method: 'GET',

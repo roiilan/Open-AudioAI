@@ -5,95 +5,95 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Open AudioAi</title>
     <link rel="stylesheet" href="styles/popup.css">
-    <script src="js/vue.global.js"></script>
 </head>
 <body>
     <div id="app">
         <div class="header">
             <img src="icons/icon32.png" alt="Open AudioAi" class="logo">
             <h1>Open AudioAi</h1>
-            <button v-if="isAuthenticated" @click="logout" class="logout-btn">
+            <button id="logout-btn" class="logout-btn" style="display: none;">
                 <span class="logout-icon">🚪</span>
             </button>
         </div>
 
         <!-- Authentication Section -->
-        <div v-if="!isAuthenticated" class="auth-section">
+        <div id="auth-section" class="auth-section">
             <div class="welcome-message">
                 <h2>Welcome to Open AudioAi</h2>
                 <p>Transform your audio into insights with ChatGPT</p>
             </div>
-            <button @click="signInWithGoogle" class="google-signin-btn" :disabled="isLoading">
+            <button id="google-signin-btn" class="google-signin-btn">
                 <img src="icons/google-logo.png" alt="Google" class="google-logo">
-                <span>{{ isLoading ? 'Signing in...' : 'Sign in with Google' }}</span>
+                <span>Sign in with Google</span>
             </button>
         </div>
 
         <!-- Main Application -->
-        <div v-else class="main-app">
+        <div id="main-app" class="main-app" style="display: none;">
             <div class="user-info">
-                <img :src="user.picture" :alt="user.name" class="user-avatar">
+                <img id="user-avatar" src="" alt="" class="user-avatar">
                 <div class="user-details">
-                    <span class="user-name">{{ user.name }}</span>
-                    <span class="user-email">{{ user.email }}</span>
+                    <span id="user-name" class="user-name"></span>
+                    <span id="user-email" class="user-email"></span>
                 </div>
             </div>
 
             <!-- Audio Upload Section -->
             <div class="upload-section">
-                <div v-if="!isProcessing && !transcript" class="upload-area" 
-                     @drop="handleDrop" @dragover="handleDragOver" @dragleave="handleDragLeave"
-                     :class="{ 'drag-over': isDragOver }">
-                    <input type="file" ref="fileInput" @change="handleFileSelect" 
-                           accept="audio/*" style="display: none;">
+                <div id="upload-area" class="upload-area">
+                    <input type="file" id="file-input" accept="audio/*" style="display: none;">
                     <div class="upload-content">
                         <div class="upload-icon">🎵</div>
                         <h3>Upload Audio File</h3>
                         <p>Drag & drop or click to select</p>
-                        <button @click="$refs.fileInput.click()" class="upload-btn">
+                        <button id="upload-btn" class="upload-btn">
                             Choose File
                         </button>
                     </div>
                 </div>
 
                 <!-- Processing Animation -->
-                <div v-if="isProcessing" class="processing-section">
+                <div id="processing-section" class="processing-section" style="display: none;">
                     <div class="loading-animation">
                         <div class="audio-wave">
-                            <div class="wave-bar" v-for="i in 5" :key="i" :style="{ animationDelay: i * 0.1 + 's' }"></div>
+                            <div class="wave-bar" style="animation-delay: 0s;"></div>
+                            <div class="wave-bar" style="animation-delay: 0.1s;"></div>
+                            <div class="wave-bar" style="animation-delay: 0.2s;"></div>
+                            <div class="wave-bar" style="animation-delay: 0.3s;"></div>
+                            <div class="wave-bar" style="animation-delay: 0.4s;"></div>
                         </div>
                     </div>
                     <h3>Processing Audio...</h3>
-                    <p>{{ processingMessage }}</p>
+                    <p id="processing-message">Uploading and transcribing your audio file...</p>
                 </div>
 
                 <!-- Transcript Display -->
-                <div v-if="transcript && !isProcessing" class="transcript-section">
+                <div id="transcript-section" class="transcript-section" style="display: none;">
                     <div class="transcript-header">
                         <h3>Transcript Ready</h3>
                         <div class="action-buttons">
-                            <button @click="copyTranscript" class="copy-btn" :class="{ 'copied': isCopied }">
-                                {{ isCopied ? '✓ Copied' : '📋 Copy' }}
+                            <button id="copy-btn" class="copy-btn">
+                                📋 Copy
                             </button>
-                            <button @click="sendToChatGPT" class="send-btn">
+                            <button id="send-btn" class="send-btn">
                                 🚀 Send to ChatGPT
                             </button>
                         </div>
                     </div>
                     <div class="transcript-content">
-                        <textarea v-model="transcript" readonly class="transcript-text"></textarea>
+                        <textarea id="transcript-text" readonly class="transcript-text"></textarea>
                     </div>
-                    <button @click="resetUpload" class="reset-btn">
+                    <button id="reset-btn" class="reset-btn">
                         Upload Another File
                     </button>
                 </div>
 
                 <!-- Error Display -->
-                <div v-if="error" class="error-section">
+                <div id="error-section" class="error-section" style="display: none;">
                     <div class="error-icon">⚠️</div>
-                    <h3>{{ error.title }}</h3>
-                    <p>{{ error.message }}</p>
-                    <button @click="clearError" class="retry-btn">
+                    <h3 id="error-title">Error</h3>
+                    <p id="error-message">Something went wrong</p>
+                    <button id="retry-btn" class="retry-btn">
                         Try Again
                     </button>
                 </div>
@@ -101,17 +101,17 @@
         </div>
 
         <!-- Token Warning Modal -->
-        <div v-if="showTokenWarning" class="modal-overlay" @click="closeTokenWarning">
-            <div class="modal-content" @click.stop>
+        <div id="token-modal" class="modal-overlay" style="display: none;">
+            <div class="modal-content">
                 <div class="modal-header">
                     <h3>Insufficient Tokens</h3>
-                    <button @click="closeTokenWarning" class="close-btn">×</button>
+                    <button id="close-modal-btn" class="close-btn">×</button>
                 </div>
                 <div class="modal-body">
                     <p>You don't have enough tokens to process this audio file. Please check your account balance or upgrade your plan.</p>
                 </div>
                 <div class="modal-footer">
-                    <button @click="closeTokenWarning" class="modal-btn">
+                    <button id="modal-understood-btn" class="modal-btn">
                         Understood
                     </button>
                 </div>

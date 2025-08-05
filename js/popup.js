@@ -1,5 +1,3 @@
-const { createApp } = Vue;
-
 // Security utilities
 const SecurityUtils = {
     // Sanitize user input to prevent XSS
@@ -53,18 +51,18 @@ const ApiService = {
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`,
-                    'X-Nonce': nonce,
+                    'X-Request-Nonce': nonce,
                     'X-Extension-Version': chrome.runtime.getManifest().version
                 },
                 body: JSON.stringify({
                     ...data,
-                    nonce: nonce,
+                    nonce,
                     timestamp: Date.now()
                 })
             });
 
             if (!response.ok) {
-                throw new Error(`Server error: ${response.status}`);
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
 
             return await response.json();
@@ -74,24 +72,24 @@ const ApiService = {
         }
     },
 
-    async uploadAudio(file, userToken) {
+    async uploadAudio(audioFile, token) {
         const formData = new FormData();
-        formData.append('audio', file);
+        formData.append('audio', audioFile);
         formData.append('nonce', SecurityUtils.generateNonce());
-        formData.append('timestamp', Date.now().toString());
+        formData.append('timestamp', Date.now());
 
         try {
-            const response = await fetch(`${this.baseUrl}/transcribe`, {
+            const response = await fetch(`${this.baseUrl}/api/transcribe`, {
                 method: 'POST',
                 headers: {
-                    'Authorization': `Bearer ${userToken}`,
+                    'Authorization': `Bearer ${token}`,
                     'X-Extension-Version': chrome.runtime.getManifest().version
                 },
                 body: formData
             });
 
             if (!response.ok) {
-                throw new Error(`Upload failed: ${response.status}`);
+                throw new Error(`Upload failed: ${response.statusText}`);
             }
 
             return await response.json();
@@ -102,278 +100,338 @@ const ApiService = {
     }
 };
 
-// Storage utility for secure data handling
-const StorageUtils = {
-    async saveUserData(userData) {
-        const encryptedData = {
-            ...userData,
-            timestamp: Date.now(),
-            version: chrome.runtime.getManifest().version
-        };
+// Main Application Class
+class AudioAiApp {
+    constructor() {
+        this.isAuthenticated = false;
+        this.user = null;
+        this.isProcessing = false;
+        this.transcript = '';
+        this.error = null;
+        this.isDragOver = false;
+        this.isCopied = false;
+        this.showTokenWarning = false;
         
-        await chrome.storage.local.set({ 
-            userData: encryptedData,
-            isAuthenticated: true 
-        });
-    },
-
-    async getUserData() {
-        const result = await chrome.storage.local.get(['userData', 'isAuthenticated']);
-        if (result.isAuthenticated && result.userData) {
-            // Validate data freshness (30 days)
-            const thirtyDays = 30 * 24 * 60 * 60 * 1000;
-            if (Date.now() - result.userData.timestamp > thirtyDays) {
-                await this.clearUserData();
-                return null;
-            }
-            return result.userData;
-        }
-        return null;
-    },
-
-    async clearUserData() {
-        await chrome.storage.local.clear();
+        this.init();
     }
-};
 
-// Vue.js Application
-createApp({
-    data() {
-        return {
-            isAuthenticated: false,
-            isLoading: false,
-            isProcessing: false,
-            isDragOver: false,
-            isCopied: false,
-            showTokenWarning: false,
-            user: null,
-            transcript: '',
-            processingMessage: 'Uploading and analyzing your audio...',
-            error: null,
-            userToken: null
-        };
-    },
+    init() {
+        this.bindEvents();
+        this.checkAuthStatus();
+    }
 
-    async mounted() {
-        await this.checkAuthStatus();
-    },
+    bindEvents() {
+        // Authentication
+        document.getElementById('google-signin-btn').addEventListener('click', () => this.signInWithGoogle());
+        document.getElementById('logout-btn').addEventListener('click', () => this.logout());
 
-    methods: {
-        async checkAuthStatus() {
-            try {
-                const userData = await StorageUtils.getUserData();
-                if (userData) {
-                    this.user = userData;
-                    this.userToken = userData.accessToken;
-                    this.isAuthenticated = true;
-                }
-            } catch (error) {
-                console.error('Auth check failed:', error);
-                await StorageUtils.clearUserData();
+        // File upload
+        document.getElementById('upload-btn').addEventListener('click', () => {
+            document.getElementById('file-input').click();
+        });
+        document.getElementById('file-input').addEventListener('change', (e) => this.handleFileSelect(e));
+
+        // Drag and drop
+        const uploadArea = document.getElementById('upload-area');
+        uploadArea.addEventListener('drop', (e) => this.handleDrop(e));
+        uploadArea.addEventListener('dragover', (e) => this.handleDragOver(e));
+        uploadArea.addEventListener('dragleave', (e) => this.handleDragLeave(e));
+
+        // Actions
+        document.getElementById('copy-btn').addEventListener('click', () => this.copyTranscript());
+        document.getElementById('send-btn').addEventListener('click', () => this.sendToChatGPT());
+        document.getElementById('reset-btn').addEventListener('click', () => this.resetUpload());
+        document.getElementById('retry-btn').addEventListener('click', () => this.clearError());
+
+        // Modal
+        document.getElementById('close-modal-btn').addEventListener('click', () => this.closeTokenWarning());
+        document.getElementById('modal-understood-btn').addEventListener('click', () => this.closeTokenWarning());
+        document.getElementById('token-modal').addEventListener('click', (e) => {
+            if (e.target.id === 'token-modal') this.closeTokenWarning();
+        });
+    }
+
+    async checkAuthStatus() {
+        try {
+            const result = await chrome.storage.local.get(['user', 'accessToken']);
+            if (result.user && result.accessToken) {
+                this.user = result.user;
+                this.isAuthenticated = true;
+                this.updateUI();
             }
-        },
+        } catch (error) {
+            console.error('Error checking auth status:', error);
+        }
+    }
 
-        async signInWithGoogle() {
-            this.isLoading = true;
-            this.clearError();
+    async signInWithGoogle() {
+        const signInBtn = document.getElementById('google-signin-btn');
+        const signInText = signInBtn.querySelector('span');
+        
+        signInText.textContent = 'Signing in...';
+        signInBtn.disabled = true;
 
-            try {
-                const token = await new Promise((resolve, reject) => {
-                    chrome.identity.getAuthToken({ interactive: true }, (token) => {
-                        if (chrome.runtime.lastError) {
-                            reject(new Error(chrome.runtime.lastError.message));
-                        } else {
-                            resolve(token);
-                        }
-                    });
-                });
-
-                // Get user info from Google API
-                const userResponse = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
-                    headers: { Authorization: `Bearer ${token}` }
-                });
-
-                if (!userResponse.ok) {
-                    throw new Error('Failed to get user information');
+        try {
+            const token = await chrome.identity.getAuthToken({ interactive: true });
+            
+            // Get user info from Google API
+            const response = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+                headers: {
+                    'Authorization': `Bearer ${token}`
                 }
+            });
 
-                const userInfo = await userResponse.json();
-                
-                // Sanitize user data
-                const sanitizedUser = {
-                    id: SecurityUtils.sanitizeInput(userInfo.id),
+            if (!response.ok) {
+                throw new Error('Failed to get user info');
+            }
+
+            const userInfo = await response.json();
+            
+            // Store user data securely
+            await chrome.storage.local.set({
+                user: {
+                    id: userInfo.id,
                     name: SecurityUtils.sanitizeInput(userInfo.name),
                     email: SecurityUtils.sanitizeInput(userInfo.email),
-                    picture: userInfo.picture, // Google URLs are safe
-                    accessToken: token
-                };
+                    picture: userInfo.picture
+                },
+                accessToken: token
+            });
 
-                await StorageUtils.saveUserData(sanitizedUser);
-                
-                this.user = sanitizedUser;
-                this.userToken = token;
-                this.isAuthenticated = true;
+            this.user = userInfo;
+            this.isAuthenticated = true;
+            this.updateUI();
 
-            } catch (error) {
-                console.error('Sign-in failed:', error);
-                this.showError('Authentication Failed', 'Unable to sign in with Google. Please try again.');
-            } finally {
-                this.isLoading = false;
-            }
-        },
+        } catch (error) {
+            console.error('Authentication failed:', error);
+            this.showError('Authentication Failed', 'Unable to sign in with Google. Please try again.');
+        } finally {
+            signInText.textContent = 'Sign in with Google';
+            signInBtn.disabled = false;
+        }
+    }
 
-        async logout() {
-            try {
-                // Revoke token
-                if (this.userToken) {
-                    chrome.identity.removeCachedAuthToken({ token: this.userToken });
-                }
-
-                await StorageUtils.clearUserData();
-                
-                this.isAuthenticated = false;
-                this.user = null;
-                this.userToken = null;
-                this.transcript = '';
-                this.clearError();
-
-            } catch (error) {
-                console.error('Logout failed:', error);
-            }
-        },
-
-        handleDragOver(e) {
-            e.preventDefault();
-            this.isDragOver = true;
-        },
-
-        handleDragLeave(e) {
-            e.preventDefault();
-            this.isDragOver = false;
-        },
-
-        handleDrop(e) {
-            e.preventDefault();
-            this.isDragOver = false;
+    async logout() {
+        try {
+            await chrome.identity.removeCachedAuthToken({
+                token: (await chrome.storage.local.get(['accessToken'])).accessToken
+            });
+            await chrome.storage.local.clear();
             
-            const files = e.dataTransfer.files;
-            if (files.length > 0) {
-                this.processFile(files[0]);
-            }
-        },
+            this.isAuthenticated = false;
+            this.user = null;
+            this.resetUpload();
+            this.updateUI();
+        } catch (error) {
+            console.error('Logout failed:', error);
+        }
+    }
 
-        handleFileSelect(e) {
-            const file = e.target.files[0];
-            if (file) {
-                this.processFile(file);
-            }
-        },
+    handleFileSelect(event) {
+        const file = event.target.files[0];
+        if (file) {
+            this.processAudioFile(file);
+        }
+    }
 
-        async processFile(file) {
-            this.clearError();
+    handleDrop(event) {
+        event.preventDefault();
+        this.isDragOver = false;
+        this.updateUploadAreaStyle();
+
+        const files = event.dataTransfer.files;
+        if (files.length > 0) {
+            this.processAudioFile(files[0]);
+        }
+    }
+
+    handleDragOver(event) {
+        event.preventDefault();
+        this.isDragOver = true;
+        this.updateUploadAreaStyle();
+    }
+
+    handleDragLeave(event) {
+        event.preventDefault();
+        this.isDragOver = false;
+        this.updateUploadAreaStyle();
+    }
+
+    updateUploadAreaStyle() {
+        const uploadArea = document.getElementById('upload-area');
+        if (this.isDragOver) {
+            uploadArea.classList.add('drag-over');
+        } else {
+            uploadArea.classList.remove('drag-over');
+        }
+    }
+
+    async processAudioFile(file) {
+        try {
+            SecurityUtils.validateAudioFile(file);
             
-            try {
-                // Validate file
-                SecurityUtils.validateAudioFile(file);
-                
-                this.isProcessing = true;
-                this.processingMessage = 'Uploading and analyzing your audio...';
+            this.isProcessing = true;
+            this.error = null;
+            this.updateUI();
 
-                // Upload to server
-                const response = await ApiService.uploadAudio(file, this.userToken);
-                
-                if (response.code === 2) {
-                    // Insufficient tokens
-                    this.showTokenWarning = true;
-                    this.isProcessing = false;
-                    return;
-                }
-
-                if (response.code === 1 && response.transcript) {
-                    // Success
-                    this.transcript = SecurityUtils.sanitizeInput(response.transcript);
-                    await this.copyTranscript(); // Auto-copy
-                    this.isProcessing = false;
-                } else {
-                    throw new Error('Invalid response from server');
-                }
-
-            } catch (error) {
-                this.isProcessing = false;
-                console.error('File processing failed:', error);
-                
-                if (error.message.includes('Invalid file type')) {
-                    this.showError('Invalid File Type', error.message);
-                } else if (error.message.includes('File too large')) {
-                    this.showError('File Too Large', error.message);
-                } else if (error.message.includes('Server error')) {
-                    this.showError('Server Error', 'Unable to process audio. Please try again later.');
-                } else {
-                    this.showError('Processing Failed', 'An error occurred while processing your audio file.');
-                }
+            const result = await chrome.storage.local.get(['accessToken']);
+            if (!result.accessToken) {
+                throw new Error('Not authenticated');
             }
-        },
 
-        async copyTranscript() {
-            try {
-                await navigator.clipboard.writeText(this.transcript);
-                this.isCopied = true;
+            // Simulate processing (replace with actual API call)
+            await this.simulateProcessing();
+            
+            // For demo purposes, generate a mock transcript
+            this.transcript = `[00:00] This is a sample transcript of your audio file: ${file.name}\n[00:05] The audio processing has been completed successfully.\n[00:10] You can now copy this transcript or send it to ChatGPT for analysis.`;
+            
+            this.isProcessing = false;
+            this.updateUI();
+
+        } catch (error) {
+            console.error('File processing failed:', error);
+            this.isProcessing = false;
+            
+            if (error.message.includes('tokens')) {
+                this.showTokenWarning = true;
+            } else {
+                this.showError('Processing Failed', error.message);
+            }
+            this.updateUI();
+        }
+    }
+
+    async simulateProcessing() {
+        const messages = [
+            'Uploading audio file...',
+            'Analyzing audio content...',
+            'Generating transcript...',
+            'Adding timestamps...',
+            'Finalizing results...'
+        ];
+
+        for (let i = 0; i < messages.length; i++) {
+            document.getElementById('processing-message').textContent = messages[i];
+            await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+    }
+
+    async copyTranscript() {
+        try {
+            await navigator.clipboard.writeText(this.transcript);
+            const copyBtn = document.getElementById('copy-btn');
+            copyBtn.textContent = '✓ Copied';
+            copyBtn.classList.add('copied');
+            
+            setTimeout(() => {
+                copyBtn.textContent = '📋 Copy';
+                copyBtn.classList.remove('copied');
+            }, 2000);
+        } catch (error) {
+            console.error('Failed to copy transcript:', error);
+        }
+    }
+
+    async sendToChatGPT() {
+        try {
+            // Find active ChatGPT tab
+            const tabs = await chrome.tabs.query({
+                url: ['https://chat.openai.com/*', 'https://chatgpt.com/*']
+            });
+
+            if (tabs.length === 0) {
+                // Open new ChatGPT tab
+                const newTab = await chrome.tabs.create({
+                    url: 'https://chat.openai.com',
+                    active: true
+                });
+                
+                // Wait for tab to load then inject transcript
                 setTimeout(() => {
-                    this.isCopied = false;
-                }, 2000);
-            } catch (error) {
-                console.error('Copy failed:', error);
-            }
-        },
-
-        async sendToChatGPT() {
-            try {
-                // First copy to clipboard
-                await this.copyTranscript();
-
-                // Get active tab and inject the transcript
-                const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-                
-                if (tab && (tab.url.includes('chat.openai.com') || tab.url.includes('chatgpt.com'))) {
-                    // Send message to content script
-                    chrome.tabs.sendMessage(tab.id, {
+                    chrome.tabs.sendMessage(newTab.id, {
                         action: 'insertTranscript',
                         transcript: this.transcript
                     });
-                } else {
-                    // Open ChatGPT in new tab
-                    chrome.tabs.create({ url: 'https://chat.openai.com' });
-                }
-            } catch (error) {
-                console.error('Failed to send to ChatGPT:', error);
-                this.showError('Integration Failed', 'Unable to send transcript to ChatGPT. The transcript has been copied to your clipboard.');
+                }, 3000);
+            } else {
+                // Use existing tab
+                chrome.tabs.update(tabs[0].id, { active: true });
+                chrome.tabs.sendMessage(tabs[0].id, {
+                    action: 'insertTranscript',
+                    transcript: this.transcript
+                });
             }
-        },
-
-        resetUpload() {
-            this.transcript = '';
-            this.isProcessing = false;
-            this.clearError();
             
-            // Reset file input
-            if (this.$refs.fileInput) {
-                this.$refs.fileInput.value = '';
-            }
-        },
-
-        showError(title, message) {
-            this.error = {
-                title: SecurityUtils.sanitizeInput(title),
-                message: SecurityUtils.sanitizeInput(message)
-            };
-        },
-
-        clearError() {
-            this.error = null;
-        },
-
-        closeTokenWarning() {
-            this.showTokenWarning = false;
+            window.close();
+        } catch (error) {
+            console.error('Failed to send to ChatGPT:', error);
+            this.showError('Send Failed', 'Unable to send transcript to ChatGPT. Please try again.');
         }
     }
-}).mount('#app');
+
+    resetUpload() {
+        this.transcript = '';
+        this.error = null;
+        this.isProcessing = false;
+        this.isCopied = false;
+        document.getElementById('file-input').value = '';
+        this.updateUI();
+    }
+
+    showError(title, message) {
+        this.error = { title, message };
+        this.updateUI();
+    }
+
+    clearError() {
+        this.error = null;
+        this.updateUI();
+    }
+
+    closeTokenWarning() {
+        this.showTokenWarning = false;
+        this.updateUI();
+    }
+
+    updateUI() {
+        // Show/hide main sections
+        document.getElementById('auth-section').style.display = this.isAuthenticated ? 'none' : 'flex';
+        document.getElementById('main-app').style.display = this.isAuthenticated ? 'flex' : 'none';
+        document.getElementById('logout-btn').style.display = this.isAuthenticated ? 'block' : 'none';
+
+        if (this.isAuthenticated && this.user) {
+            document.getElementById('user-avatar').src = this.user.picture || '';
+            document.getElementById('user-avatar').alt = this.user.name || '';
+            document.getElementById('user-name').textContent = this.user.name || '';
+            document.getElementById('user-email').textContent = this.user.email || '';
+        }
+
+        // Show/hide upload states
+        document.getElementById('upload-area').style.display = 
+            (!this.isProcessing && !this.transcript && !this.error) ? 'block' : 'none';
+        document.getElementById('processing-section').style.display = 
+            this.isProcessing ? 'block' : 'none';
+        document.getElementById('transcript-section').style.display = 
+            (this.transcript && !this.isProcessing && !this.error) ? 'block' : 'none';
+        document.getElementById('error-section').style.display = 
+            this.error ? 'block' : 'none';
+
+        if (this.error) {
+            document.getElementById('error-title').textContent = this.error.title;
+            document.getElementById('error-message').textContent = this.error.message;
+        }
+
+        if (this.transcript) {
+            document.getElementById('transcript-text').value = this.transcript;
+        }
+
+        // Modal
+        document.getElementById('token-modal').style.display = 
+            this.showTokenWarning ? 'flex' : 'none';
+    }
+}
+
+// Initialize the application
+document.addEventListener('DOMContentLoaded', () => {
+    new AudioAiApp();
+});

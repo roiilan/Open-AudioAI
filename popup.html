@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Open AudioAi</title>
     <link rel="stylesheet" href="styles/popup.css">
-    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="js/vue.global.js"></script>
 </head>
 <body>
     <div id="app">
@@ -24,7 +24,7 @@
                 <p>Transform your audio into insights with ChatGPT</p>
             </div>
             <button @click="signInWithGoogle" class="google-signin-btn" :disabled="isLoading">
-                <img src="https://developers.google.com/identity/images/g-logo.png" alt="Google" class="google-logo">
+                <img src="icons/google-logo.png" alt="Google" class="google-logo">
                 <span>{{ isLoading ? 'Signing in...' : 'Sign in with Google' }}</span>
             </button>
         </div>

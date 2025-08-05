@@ -6,13 +6,12 @@
   "permissions": [
     "activeTab",
     "storage",
-    "identity",
-    "https://www.googleapis.com/*",
-    "https://chat.openai.com/*"
+    "identity"
   ],
   "host_permissions": [
     "https://chat.openai.com/*",
-    "https://chatgpt.com/*"
+    "https://chatgpt.com/*",
+    "https://www.googleapis.com/*"
   ],
   "oauth2": {
     "client_id": "174350614321-jbjk9v1hgfs9c08iaj0pngrv2tj4m8ct.apps.googleusercontent.com",

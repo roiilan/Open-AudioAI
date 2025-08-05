@@ -304,23 +304,31 @@ chrome.runtime.onSuspend.addListener(async () => {
 });
 
 // Security: Content Security Policy violation handler
-chrome.webRequest.onHeadersReceived.addListener(
-    (details) => {
-        // Monitor for security violations
-        const cspHeader = details.responseHeaders?.find(
-            header => header.name.toLowerCase() === 'content-security-policy'
+// Note: webRequest API monitoring is optional and may require additional permissions
+try {
+    if (chrome.webRequest && chrome.webRequest.onHeadersReceived) {
+        chrome.webRequest.onHeadersReceived.addListener(
+            (details) => {
+                // Monitor for security violations
+                const cspHeader = details.responseHeaders?.find(
+                    header => header.name.toLowerCase() === 'content-security-policy'
+                );
+                
+                if (cspHeader && details.url.includes('chat.openai.com')) {
+                    SecurityManager.logSecurity('csp_policy_detected', {
+                        url: details.url,
+                        policy: cspHeader.value
+                    });
+                }
+            },
+            { urls: ["https://chat.openai.com/*", "https://chatgpt.com/*"] },
+            ["responseHeaders"]
         );
-        
-        if (cspHeader && details.url.includes('chat.openai.com')) {
-            SecurityManager.logSecurity('csp_policy_detected', {
-                url: details.url,
-                policy: cspHeader.value
-            });
-        }
-    },
-    { urls: ["https://chat.openai.com/*", "https://chatgpt.com/*"] },
-    ["responseHeaders"]
-);
+    }
+} catch (error) {
+    console.warn('WebRequest API not available or insufficient permissions:', error.message);
+    // Extension can still function without webRequest monitoring
+}
 
 // Initialize security settings
 chrome.storage.local.get(['securitySettings']).then(result => {

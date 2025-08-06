@@ -54,8 +54,8 @@ A secure Chrome extension that enables ChatGPT users to upload audio files, tran
    - Add your extension ID to authorized origins
    - Update `manifest.json` with your client ID:
      ```json
-     "oauth2": {
-       "client_id": "174350614321-jbjk9v1hgfs9c08iaj0pngrv2tj4m8ct.apps.googleusercontent.com"
+        "oauth2": {
+     "client_id": "YOUR_GOOGLE_CLIENT_ID_HERE.apps.googleusercontent.com"
      }
      ```
 

@@ -135,16 +135,24 @@ const App = {
 
         const fetchUserInfo = async (token) => {
             try {
-                const response = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+                console.log('Fetching user info with token:', token ? 'Token received' : 'No token');
+                
+                const response = await fetch('https://www.googleapis.com/oauth2/v1/userinfo?alt=json', {
                     headers: {
-                        'Authorization': `Bearer ${token}`
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
                     }
                 });
 
+                console.log('Response status:', response.status);
+                console.log('Response ok:', response.ok);
+
                 if (response.ok) {
                     const userInfo = await response.json();
+                    console.log('User info received:', userInfo);
+                    
                     user.value = {
-                        name: SecurityUtils.sanitizeInput(userInfo.name),
+                        name: SecurityUtils.sanitizeInput(userInfo.name || userInfo.given_name || 'User'),
                         email: SecurityUtils.sanitizeInput(userInfo.email),
                         picture: userInfo.picture // URL from Google is safe
                     };
@@ -156,12 +164,16 @@ const App = {
                         isAuthenticated: true,
                         authToken: token
                     });
+                    
+                    console.log('Authentication successful, user:', user.value);
                 } else {
-                    throw new Error('Failed to fetch user info');
+                    const errorText = await response.text();
+                    console.error('Response not ok:', response.status, errorText);
+                    throw new Error(`Failed to fetch user info: ${response.status} ${response.statusText}`);
                 }
             } catch (error) {
                 console.error('Failed to fetch user info:', error);
-                showError('Failed to fetch user information', 'Please try signing in again.');
+                showError('Failed to fetch user information', `Error: ${error.message}. Please try signing in again.`);
             }
         };
 

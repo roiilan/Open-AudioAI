@@ -57,13 +57,19 @@ This document provides a comprehensive security audit of the Open AudioAi Chrome
 #### Extension CSP
 ```javascript
 "content_security_policy": {
-  "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';"
+  "extension_pages": "script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval'; object-src 'self';"
 }
 ```
 - ✅ Strict script source policy
 - ✅ No unsafe-inline allowed
-- ✅ No unsafe-eval (except wasm)
+- ⚠️ Allows unsafe-eval for Vue.js template compilation
 - ✅ Self-only object sources
+
+**Note**: `unsafe-eval` is required for Vue.js runtime template compilation. This is a controlled security risk as:
+- Scripts are only loaded from 'self' (extension files)
+- No external script sources are allowed
+- Vue.js is a trusted, well-audited framework
+- Template compilation is sandboxed within the extension context
 
 ### 5. Extension Permissions
 

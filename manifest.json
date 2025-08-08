@@ -11,14 +11,17 @@
   "host_permissions": [
     "https://chat.openai.com/*",
     "https://chatgpt.com/*",
-    "https://www.googleapis.com/*"
+    "https://www.googleapis.com/*",
+    "https://openidconnect.googleapis.com/*"
   ],
   "oauth2": {
     "client_id": "174350614321-jbjk9v1hgfs9c08iaj0pngrv2tj4m8ct.apps.googleusercontent.com",
     "scopes": [
       "openid",
       "email",
-      "profile"
+      "profile",
+      "https://www.googleapis.com/auth/userinfo.email",
+      "https://www.googleapis.com/auth/userinfo.profile"
     ]
   },
   "background": {

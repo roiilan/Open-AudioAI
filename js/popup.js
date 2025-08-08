@@ -114,6 +114,40 @@ const App = {
         const fileInput = ref(null);
 
         // Methods
+        const getAuthToken = async (force = false) => {
+            try {
+                if (force) {
+                    try {
+                        const data = await chrome.storage.local.get(['authToken']);
+                        if (data && data.authToken) {
+                            await chrome.identity.removeCachedAuthToken({ token: data.authToken });
+                        }
+                    } catch (err) {
+                        console.warn('Failed to clear cached auth token (non-fatal):', err);
+                    }
+                }
+
+                const token = await new Promise((resolve, reject) => {
+                    try {
+                        chrome.identity.getAuthToken({ interactive: true }, (t) => {
+                            if (chrome.runtime.lastError || !t) {
+                                return reject(chrome.runtime.lastError || new Error('No token returned'));
+                            }
+                            resolve(t);
+                        });
+                    } catch (e) {
+                        reject(e);
+                    }
+                });
+
+                await chrome.storage.local.set({ authToken: token });
+                return token;
+            } catch (e) {
+                console.error('getAuthToken failed:', e);
+                throw e;
+            }
+        };
+
         const signInWithGoogle = async () => {
             if (isLoading.value) return;
             
@@ -121,10 +155,8 @@ const App = {
             clearError();
             
             try {
-                const token = await chrome.identity.getAuthToken({ interactive: true });
-                if (token) {
-                    await fetchUserInfo(token);
-                }
+                const token = await getAuthToken();
+                await fetchUserInfo(token);
             } catch (error) {
                 console.error('Authentication failed:', error);
                 showError('Authentication Failed', 'Please try signing in again.');
@@ -135,7 +167,7 @@ const App = {
 
         const fetchUserInfo = async (token) => {
             try {
-                const response = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+                const response = await fetch('https://openidconnect.googleapis.com/v1/userinfo', {
                     headers: {
                         'Authorization': `Bearer ${token}`
                     }
@@ -156,6 +188,9 @@ const App = {
                         isAuthenticated: true,
                         authToken: token
                     });
+                } else if (response.status === 401) {
+                    const refreshed = await getAuthToken(true);
+                    return await fetchUserInfo(refreshed);
                 } else {
                     throw new Error('Failed to fetch user info');
                 }

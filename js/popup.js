@@ -148,6 +148,60 @@ const App = {
             }
         };
 
+        // New: OAuth via explicit web auth flow to force account selection
+        const signInWithGoogleDifferentAccount = async () => {
+            if (isLoading.value) return;
+            isLoading.value = true;
+            clearError();
+
+            try {
+                const manifest = chrome.runtime.getManifest();
+                const clientId = manifest?.oauth2?.client_id;
+                const scopes = manifest?.oauth2?.scopes || [];
+                if (!clientId || scopes.length === 0) {
+                    throw new Error('OAuth configuration missing in manifest');
+                }
+
+                const redirectUri = `https://${chrome.runtime.id}.chromiumapp.org/`;
+                const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+                authUrl.searchParams.set('client_id', clientId);
+                authUrl.searchParams.set('response_type', 'token');
+                authUrl.searchParams.set('redirect_uri', redirectUri);
+                authUrl.searchParams.set('scope', scopes.join(' '));
+                authUrl.searchParams.set('include_granted_scopes', 'true');
+                authUrl.searchParams.set('prompt', 'select_account');
+                authUrl.searchParams.set('nonce', SecurityUtils.generateNonce());
+
+                const responseUrl = await new Promise((resolve, reject) => {
+                    try {
+                        chrome.identity.launchWebAuthFlow({ url: authUrl.toString(), interactive: true }, (redirectedTo) => {
+                            if (chrome.runtime.lastError || !redirectedTo) {
+                                return reject(chrome.runtime.lastError || new Error('Auth flow failed'));
+                            }
+                            resolve(redirectedTo);
+                        });
+                    } catch (e) {
+                        reject(e);
+                    }
+                });
+
+                const hash = new URL(responseUrl).hash || '';
+                const params = new URLSearchParams(hash.startsWith('#') ? hash.slice(1) : hash);
+                const token = params.get('access_token');
+                if (!token) {
+                    throw new Error('No access token returned');
+                }
+
+                await chrome.storage.local.set({ authToken: token });
+                await fetchUserInfo(token);
+            } catch (error) {
+                console.error('Authentication (account selection) failed:', error);
+                showError('Authentication Failed', 'Please try again.');
+            } finally {
+                isLoading.value = false;
+            }
+        };
+
         const signInWithGoogle = async () => {
             if (isLoading.value) return;
             
@@ -204,9 +258,20 @@ const App = {
             try {
                 const data = await chrome.storage.local.get(['authToken']);
                 if (data.authToken) {
-                    await chrome.identity.removeCachedAuthToken({ token: data.authToken });
+                    try {
+                        await chrome.identity.removeCachedAuthToken({ token: data.authToken });
+                    } catch (_) {}
+
+                    try {
+                        await fetch('https://oauth2.googleapis.com/revoke', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                            body: `token=${encodeURIComponent(data.authToken)}`
+                        });
+                    } catch (_) {}
                 }
-                
+
+                await new Promise((resolve) => chrome.identity.clearAllCachedAuthTokens(() => resolve()));
                 await chrome.storage.local.clear();
                 user.value = null;
                 isAuthenticated.value = false;
@@ -383,6 +448,7 @@ const App = {
             fileInput,
             // Methods
             signInWithGoogle,
+            signInWithGoogleDifferentAccount,
             logout,
             handleFileSelect,
             handleDrop,
@@ -401,8 +467,8 @@ const App = {
         const { 
             isAuthenticated, isLoading, user, transcript, isProcessing, 
             processingMessage, error, isDragOver, isCopied, showTokenWarning,
-            signInWithGoogle, logout, handleFileSelect, handleDrop, 
-            handleDragOver, handleDragLeave, copyTranscript, sendToChatGPT, 
+            signInWithGoogle, signInWithGoogleDifferentAccount, logout, handleFileSelect, 
+            handleDrop, handleDragOver, handleDragLeave, copyTranscript, sendToChatGPT, 
             resetUpload, clearError, closeTokenWarning, openFileDialog
         } = this;
 
@@ -432,6 +498,14 @@ const App = {
                 }, [
                     h('img', { src: 'icons/google-logo.png', alt: 'Google', class: 'google-logo' }),
                     h('span', isLoading ? 'Signing in...' : 'Sign in with Google')
+                ]),
+                h('button', {
+                    class: 'google-signin-btn alt',
+                    disabled: isLoading,
+                    onClick: signInWithGoogleDifferentAccount
+                }, [
+                    h('img', { src: 'icons/google-logo.png', alt: 'Google', class: 'google-logo' }),
+                    h('span', isLoading ? 'Opening account chooser...' : 'Sign in with another account')
                 ])
             ]),
 

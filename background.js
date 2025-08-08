@@ -96,8 +96,8 @@ const AuthManager = {
         }
         
         try {
-            // Verify token with Google
-            const response = await fetch('https://www.googleapis.com/oauth2/v1/tokeninfo?access_token=' + token);
+            // Verify token with Google (modern endpoint)
+            const response = await fetch('https://oauth2.googleapis.com/tokeninfo?access_token=' + token);
             const tokenInfo = await response.json();
             
             if (tokenInfo.error) {
@@ -105,9 +105,9 @@ const AuthManager = {
                 return false;
             }
             
-            // Check token expiration
+            // Check token expiration if present
             const expiresIn = parseInt(tokenInfo.expires_in);
-            if (expiresIn < 300) { // Less than 5 minutes
+            if (!Number.isNaN(expiresIn) && expiresIn < 300) { // Less than 5 minutes
                 SecurityManager.logSecurity('token_expiring_soon', { expiresIn });
                 return false;
             }

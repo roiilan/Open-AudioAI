@@ -204,6 +204,14 @@ const App = {
 
         const signInWithGoogle = async () => {
             if (isLoading.value) return;
+
+            try {
+                const { forceAccountSelection } = await chrome.storage.local.get(['forceAccountSelection']);
+                if (forceAccountSelection) {
+                    await chrome.storage.local.remove('forceAccountSelection');
+                    return await signInWithGoogleDifferentAccount();
+                }
+            } catch (_) {}
             
             isLoading.value = true;
             clearError();
@@ -273,6 +281,7 @@ const App = {
 
                 await new Promise((resolve) => chrome.identity.clearAllCachedAuthTokens(() => resolve()));
                 await chrome.storage.local.clear();
+                await chrome.storage.local.set({ forceAccountSelection: true });
                 user.value = null;
                 isAuthenticated.value = false;
                 resetUpload();
@@ -476,13 +485,7 @@ const App = {
             // Header
             h('div', { class: 'header' }, [
                 h('img', { src: 'icons/icon32.png', alt: 'Open AudioAi', class: 'logo' }),
-                h('h1', 'Open AudioAi'),
-                isAuthenticated && h('button', { 
-                    class: 'logout-btn',
-                    onClick: logout 
-                }, [
-                    h('span', { class: 'logout-icon' }, '🚪')
-                ])
+                h('h1', 'Open AudioAi')
             ]),
 
             // Authentication Section
@@ -517,6 +520,13 @@ const App = {
                     h('div', { class: 'user-details' }, [
                         h('span', { class: 'user-name' }, user.name),
                         h('span', { class: 'user-email' }, user.email)
+                    ]),
+                    h('button', {
+                        class: 'logout-chip',
+                        onClick: logout
+                    }, [
+                        h('span', { class: 'logout-icon' }, '🚪'),
+                        h('span', { class: 'logout-text' }, 'Logout')
                     ])
                 ]),
 

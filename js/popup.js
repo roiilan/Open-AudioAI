@@ -169,7 +169,7 @@ const App = {
                 authUrl.searchParams.set('redirect_uri', redirectUri);
                 authUrl.searchParams.set('scope', scopes.join(' '));
                 authUrl.searchParams.set('include_granted_scopes', 'true');
-                authUrl.searchParams.set('prompt', 'select_account');
+                authUrl.searchParams.set('prompt', 'select_account consent');
                 authUrl.searchParams.set('nonce', SecurityUtils.generateNonce());
 
                 const responseUrl = await new Promise((resolve, reject) => {
@@ -209,7 +209,49 @@ const App = {
             clearError();
             
             try {
-                const token = await getAuthToken();
+                const manifest = chrome.runtime.getManifest();
+                const clientId = manifest?.oauth2?.client_id;
+                const scopes = manifest?.oauth2?.scopes || [];
+                if (!clientId || scopes.length === 0) {
+                    throw new Error('OAuth configuration missing in manifest');
+                }
+
+                // Ensure no cached token silently re-authenticates the previous account
+                try {
+                    await new Promise((resolve) => chrome.identity.clearAllCachedAuthTokens(() => resolve()));
+                } catch (_) {}
+
+                const redirectUri = `https://${chrome.runtime.id}.chromiumapp.org/`;
+                const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+                authUrl.searchParams.set('client_id', clientId);
+                authUrl.searchParams.set('response_type', 'token');
+                authUrl.searchParams.set('redirect_uri', redirectUri);
+                authUrl.searchParams.set('scope', scopes.join(' '));
+                authUrl.searchParams.set('include_granted_scopes', 'true');
+                authUrl.searchParams.set('prompt', 'select_account consent');
+                authUrl.searchParams.set('nonce', SecurityUtils.generateNonce());
+
+                const responseUrl = await new Promise((resolve, reject) => {
+                    try {
+                        chrome.identity.launchWebAuthFlow({ url: authUrl.toString(), interactive: true }, (redirectedTo) => {
+                            if (chrome.runtime.lastError || !redirectedTo) {
+                                return reject(chrome.runtime.lastError || new Error('Auth flow failed'));
+                            }
+                            resolve(redirectedTo);
+                        });
+                    } catch (e) {
+                        reject(e);
+                    }
+                });
+
+                const hash = new URL(responseUrl).hash || '';
+                const params = new URLSearchParams(hash.startsWith('#') ? hash.slice(1) : hash);
+                const token = params.get('access_token');
+                if (!token) {
+                    throw new Error('No access token returned');
+                }
+
+                await chrome.storage.local.set({ authToken: token });
                 await fetchUserInfo(token);
             } catch (error) {
                 console.error('Authentication failed:', error);

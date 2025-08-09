@@ -170,7 +170,7 @@ const App = {
                 authUrl.searchParams.set('scope', scopes.join(' '));
                 authUrl.searchParams.set('include_granted_scopes', 'true');
                 authUrl.searchParams.set('prompt', 'select_account');
-                authUrl.searchParams.set('nonce', SecurityUtils.generateNonce());
+                authUrl.searchParams.set('state', SecurityUtils.generateNonce());
 
                 const responseUrl = await new Promise((resolve, reject) => {
                     try {

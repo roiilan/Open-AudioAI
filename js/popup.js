@@ -203,20 +203,7 @@ const App = {
         };
 
         const signInWithGoogle = async () => {
-            if (isLoading.value) return;
-            
-            isLoading.value = true;
-            clearError();
-            
-            try {
-                const token = await getAuthToken();
-                await fetchUserInfo(token);
-            } catch (error) {
-                console.error('Authentication failed:', error);
-                showError('Authentication Failed', 'Please try signing in again.');
-            } finally {
-                isLoading.value = false;
-            }
+            return await signInWithGoogleDifferentAccount();
         };
 
         const fetchUserInfo = async (token) => {

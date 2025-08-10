@@ -62,7 +62,7 @@ const ApiService = {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`,
                     'X-Nonce': nonce,
-                    'X-Requested-With': 'XMLHttpRequest'
+                    
                 },
                 body: JSON.stringify({ ...data, nonce })
             });
@@ -80,15 +80,14 @@ const ApiService = {
 
     async uploadAudio(file, token) {
         const formData = new FormData();
-        formData.append('audio', file);
+        formData.append('audio_file', file);
         formData.append('nonce', SecurityUtils.generateNonce());
 
         try {
-            const response = await fetch(`${this.baseUrl}/transcribe`, {
+            const response = await fetch(`${this.baseUrl}/transcribe/`, {
                 method: 'POST',
                 headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'X-Requested-With': 'XMLHttpRequest'
+                    'Authorization': `Bearer ${token}`
                 },
                 body: formData
             });

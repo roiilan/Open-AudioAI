@@ -11,7 +11,7 @@ A secure Chrome extension that enables ChatGPT users to upload audio files, tran
 
 🎵 **Audio File Upload & Transcription**
 - Support for multiple audio formats (MP3, WAV, OGG, AAC, M4A, FLAC)
-- File size validation (up to 100MB)
+- File size validation (up to 500MB)
 - Secure file processing with your Python server
 
 ⚡ **Real-time Processing**

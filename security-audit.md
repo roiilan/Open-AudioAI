@@ -27,7 +27,7 @@ This document provides a comprehensive security audit of the Open AudioAi Chrome
 
 #### File Upload Security
 - ✅ File type validation (whitelist approach)
-- ✅ File size limits (100MB max)
+- ✅ File size limits (500MB max)
 - ✅ MIME type verification
 - ✅ Extension validation
 

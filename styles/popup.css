@@ -52,21 +52,30 @@ body {
     border-radius: 4px;
 }
 
+/* Logout button (inline next to email) */
 .logout-btn {
-    background: #ef4444;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
     border: none;
-    border-radius: 8px;
-    padding: 8px;
+    border-radius: 9999px;
+    padding: 6px 10px;
     cursor: pointer;
-    transition: all 0.2s ease;
-    color: white;
-    font-size: 14px;
+    transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.2s ease;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 600;
+    box-shadow: 0 2px 8px rgba(239, 68, 68, 0.35);
 }
 
 .logout-btn:hover {
-    background: #dc2626;
     transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.45);
 }
+
+.logout-icon { font-size: 14px; }
+.logout-label { letter-spacing: 0.2px; }
 
 /* Authentication Section */
 .auth-section {
@@ -169,6 +178,13 @@ body {
     color: #718096;
 }
 
+.email-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 2px;
+}
+
 /* Upload Section */
 .upload-section {
     flex: 1;
@@ -225,49 +241,31 @@ body {
     transform: translateY(-1px);
 }
 
-/* Processing Section */
-.processing-section {
-    text-align: center;
-    padding: 40px 20px;
+/* Processing Section - no longer used globally, keeping base animations for inline use */
+.processing-section { display: none; }
+
+/* Inline spinner for pending transcript item */
+.inline-spinner {
+    width: 12px;
+    height: 12px;
+    border: 2px solid #fca5a5; /* light red */
+    border-top-color: #ef4444; /* red */
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 6px;
+    animation: spin 0.8s linear infinite;
 }
 
-.loading-animation {
-    margin-bottom: 24px;
+@keyframes spin {
+    to { transform: rotate(360deg); }
 }
 
-.audio-wave {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    gap: 4px;
-    height: 60px;
-}
+.filename-text { vertical-align: middle; }
 
-.wave-bar {
-    width: 6px;
-    background: #667eea;
-    border-radius: 3px;
-    animation: wave 1.2s ease-in-out infinite;
-}
-
-@keyframes wave {
-    0%, 40%, 100% {
-        height: 10px;
-    }
-    20% {
-        height: 50px;
-    }
-}
-
-.processing-section h3 {
-    font-size: 18px;
-    font-weight: 600;
-    color: #2d3748;
-    margin-bottom: 8px;
-}
-
-.processing-section p {
-    color: #718096;
+.pending-note {
+    margin-top: 6px;
+    font-size: 11px;
+    color: #dc2626; /* red-600 */
 }
 
 /* Transcript Section */

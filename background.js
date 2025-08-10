@@ -153,6 +153,122 @@ const AuthManager = {
     }
 };
 
+// Add upload/transcription handling in background service worker
+const UploadManager = (() => {
+    const SERVER_BASE_URL = 'http://localhost:8000';
+
+    async function saveTranscriptRecord(record) {
+        try {
+            const { transcripts = [] } = await chrome.storage.local.get(['transcripts']);
+            transcripts.unshift(record);
+            await chrome.storage.local.set({ transcripts });
+        } catch (error) {
+            console.error('Failed saving transcript record:', error);
+        }
+    }
+
+    function buildRecord({ id, filename, status, transcript, words, error }) {
+        return {
+            id,
+            filename,
+            createdAt: Date.now(),
+            status, // 'pending' | 'success' | 'error'
+            transcript: transcript || '',
+            words: words || [],
+            error: error || null,
+        };
+    }
+
+    async function toBlobFromPayload({ arrayBuffer, dataUrl, mime = 'audio/m4a' }) {
+        try {
+            if (dataUrl && typeof dataUrl === 'string' && dataUrl.startsWith('data:')) {
+                const resp = await fetch(dataUrl);
+                return await resp.blob();
+            }
+            if (arrayBuffer instanceof ArrayBuffer) {
+                return new Blob([arrayBuffer], { type: mime });
+            }
+            throw new Error('No valid file payload');
+        } catch (e) {
+            throw new Error('Failed to build Blob from payload');
+        }
+    }
+
+    async function uploadPayload({ id, filename, arrayBuffer, dataUrl, token }) {
+        const blob = await toBlobFromPayload({ arrayBuffer, dataUrl });
+        const formData = new FormData();
+        formData.append('audio_file', blob, filename);
+        formData.append('nonce', crypto.getRandomValues(new Uint32Array(1))[0].toString(16));
+
+        // Diagnostics
+        console.log('[Upload] Starting', { id, filename, size: blob.size, type: blob.type });
+
+        const response = await fetch(`${SERVER_BASE_URL}/transcribe/`, {
+            method: 'POST',
+            headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+            body: formData,
+        });
+
+        let json;
+        if (!response.ok) {
+            const text = await response.text().catch(() => '');
+            console.warn('[Upload] Server not OK', { status: response.status, body: text });
+            try {
+                json = text ? JSON.parse(text) : null;
+            } catch (_) {
+                json = null;
+            }
+            throw new Error(json?.message || `Server error ${response.status}`);
+        }
+
+        try {
+            json = await response.json();
+        } catch (e) {
+            throw new Error(`Invalid JSON response (${response.status})`);
+        }
+
+        if (!json.success) {
+            throw new Error(json?.message || 'Transcription failed');
+        }
+
+        console.log('[Upload] Success', { id, bytes: blob.size });
+        return json; // { success: true, transcript, words }
+    }
+
+    async function startUpload({ filename, arrayBuffer, dataUrl, token }) {
+        const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const pendingRecord = buildRecord({ id, filename, status: 'pending' });
+        await saveTranscriptRecord(pendingRecord);
+        notifyProgress({ id, status: 'pending' });
+
+        try {
+            const { transcript, words } = await uploadPayload({ id, filename, arrayBuffer, dataUrl, token });
+            const successRecord = buildRecord({ id, filename, status: 'success', transcript, words });
+
+            const { transcripts = [] } = await chrome.storage.local.get(['transcripts']);
+            const updated = transcripts.map(t => t.id === id ? successRecord : t);
+            await chrome.storage.local.set({ transcripts: updated });
+
+            notifyProgress({ id, status: 'success', transcript });
+            return { success: true, id };
+        } catch (error) {
+            const errorRecord = buildRecord({ id, filename, status: 'error', error: error.message });
+            const { transcripts = [] } = await chrome.storage.local.get(['transcripts']);
+            const updated = transcripts.map(t => t.id === id ? errorRecord : t);
+            await chrome.storage.local.set({ transcripts: updated });
+
+            notifyProgress({ id, status: 'error', message: error.message });
+            return { success: false, id, message: error.message };
+        }
+    }
+
+    function notifyProgress(payload) {
+        chrome.runtime.sendMessage({ action: 'uploadProgress', data: payload }).catch(() => {});
+    }
+
+    return { startUpload };
+})();
+
 // Message handling with security validation
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     // Security validation
@@ -192,6 +308,28 @@ async function handleMessage(request, sender) {
         case 'checkApiHealth':
             return await checkApiHealth();
             
+        case 'startBackgroundUpload': {
+            const { filename, arrayBuffer, dataUrl, token } = data || {};
+            console.log('[BG] startBackgroundUpload received', {
+                hasFilename: !!filename,
+                hasArrayBuffer: arrayBuffer instanceof ArrayBuffer,
+                arrayBufferType: arrayBuffer ? Object.prototype.toString.call(arrayBuffer) : null,
+                hasDataUrl: typeof dataUrl === 'string' && dataUrl.startsWith('data:'),
+                dataUrlPrefix: typeof dataUrl === 'string' ? dataUrl.slice(0, 30) : null
+            });
+
+            const hasAb = arrayBuffer && (arrayBuffer.byteLength >= 0 || arrayBuffer.size >= 0);
+            const hasDu = typeof dataUrl === 'string' && dataUrl.startsWith('data:');
+
+            if (!filename || (!hasAb && !hasDu)) {
+                return { success: false, message: 'Missing file data' };
+            }
+            return await UploadManager.startUpload({ filename, arrayBuffer, dataUrl, token });
+        }
+        case 'getTranscripts': {
+            const { transcripts = [] } = await chrome.storage.local.get(['transcripts']);
+            return { success: true, transcripts };
+        }
         default:
             SecurityManager.logSecurity('unknown_action', { action });
             return { error: 'Unknown action' };
@@ -283,23 +421,12 @@ setInterval(async () => {
     }
 }, 24 * 60 * 60 * 1000); // Run daily
 
-// Handle extension uninstall/disable
+// Handle service worker suspend lifecycle (do not clear storage here)
 chrome.runtime.onSuspend.addListener(async () => {
     try {
-        // Clean up sensitive data
-        await chrome.storage.local.clear();
-        
-        // Revoke authentication tokens
-        const result = await chrome.storage.local.get(['userData']);
-        if (result.userData && result.userData.accessToken) {
-            chrome.identity.removeCachedAuthToken({ 
-                token: result.userData.accessToken 
-            });
-        }
-        
-        SecurityManager.logSecurity('extension_suspended', {});
+        SecurityManager.logSecurity('service_worker_suspended', {});
     } catch (error) {
-        console.error('Error during extension suspension:', error);
+        console.warn('onSuspend handler error:', error);
     }
 });
 

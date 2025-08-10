@@ -61,8 +61,7 @@ const ApiService = {
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`,
-                    'X-Nonce': nonce,
-                    'X-Requested-With': 'XMLHttpRequest'
+                    'X-Nonce': nonce
                 },
                 body: JSON.stringify({ ...data, nonce })
             });
@@ -83,25 +82,32 @@ const ApiService = {
         formData.append('audio', file);
         formData.append('nonce', SecurityUtils.generateNonce());
 
-        try {
-            const response = await fetch(`${this.baseUrl}/transcribe`, {
+        const doUpload = async (path) => {
+            const response = await fetch(`${this.baseUrl}${path}`, {
                 method: 'POST',
                 headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'X-Requested-With': 'XMLHttpRequest'
+                    'Authorization': `Bearer ${token}`
                 },
                 body: formData
             });
 
             if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+                let errorMessage = `HTTP error! status: ${response.status}`;
+                try {
+                    const errorData = await response.json();
+                    errorMessage = errorData.message || errorMessage;
+                } catch (_) {}
+                throw new Error(errorMessage);
             }
 
             return await response.json();
-        } catch (error) {
-            console.error('Audio upload failed:', error);
-            throw error;
+        };
+
+        try {
+            return await doUpload('/transcribe');
+        } catch (e) {
+            // Retry with trailing slash to avoid framework auto-redirects on preflight
+            return await doUpload('/transcribe/');
         }
     }
 };

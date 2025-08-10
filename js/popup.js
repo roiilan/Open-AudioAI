@@ -107,10 +107,10 @@ const ApiService = {
 
 // Replace direct upload with background upload via messaging and load stored transcripts
 const BackgroundBridge = {
-    startUpload({ filename, arrayBuffer, token }) {
+    startUpload(data) {
         return new Promise((resolve) => {
             chrome.runtime.sendMessage(
-                { action: 'startBackgroundUpload', data: { filename, arrayBuffer, token } },
+                { action: 'startBackgroundUpload', data },
                 (response) => resolve(response || { success: false, message: 'No response' })
             );
         });
@@ -314,7 +314,15 @@ const App = {
                      payload = { arrayBuffer };
                  }
                  processingMessage.value = 'Transcribing audio...';
-                 const res = await BackgroundBridge.startUpload({ filename: file.name || 'audio.m4a', ...payload, token: data.authToken });
+                 const payloadToSend = { filename: file.name || 'audio.m4a', ...payload, token: data.authToken };
+                 console.log('[POPUP] Sending upload payload', {
+                     filename: payloadToSend.filename,
+                     hasDataUrl: typeof payloadToSend.dataUrl === 'string',
+                     dataUrlPrefix: typeof payloadToSend.dataUrl === 'string' ? payloadToSend.dataUrl.slice(0, 30) : null,
+                     hasArrayBuffer: payloadToSend.arrayBuffer instanceof ArrayBuffer,
+                     arrayBufferBytes: payloadToSend.arrayBuffer ? payloadToSend.arrayBuffer.byteLength : 0
+                 });
+                 const res = await BackgroundBridge.startUpload(payloadToSend);
 
                 if (!res?.success) {
                     throw new Error(res?.message || 'Upload failed');

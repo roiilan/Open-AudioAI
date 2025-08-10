@@ -310,7 +310,18 @@ async function handleMessage(request, sender) {
             
         case 'startBackgroundUpload': {
             const { filename, arrayBuffer, dataUrl, token } = data || {};
-            if (!filename || (!arrayBuffer && !dataUrl)) {
+            console.log('[BG] startBackgroundUpload received', {
+                hasFilename: !!filename,
+                hasArrayBuffer: arrayBuffer instanceof ArrayBuffer,
+                arrayBufferType: arrayBuffer ? Object.prototype.toString.call(arrayBuffer) : null,
+                hasDataUrl: typeof dataUrl === 'string' && dataUrl.startsWith('data:'),
+                dataUrlPrefix: typeof dataUrl === 'string' ? dataUrl.slice(0, 30) : null
+            });
+
+            const hasAb = arrayBuffer && (arrayBuffer.byteLength >= 0 || arrayBuffer.size >= 0);
+            const hasDu = typeof dataUrl === 'string' && dataUrl.startsWith('data:');
+
+            if (!filename || (!hasAb && !hasDu)) {
                 return { success: false, message: 'Missing file data' };
             }
             return await UploadManager.startUpload({ filename, arrayBuffer, dataUrl, token });

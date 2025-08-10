@@ -20,7 +20,7 @@ const SecurityUtils = {
             'audio/aac', 'audio/m4a', 'audio/mp4', 'audio/x-m4a', 'audio/flac'
         ];
         const allowedExtensions = ['mp3', 'wav', 'ogg', 'aac', 'm4a', 'flac'];
-        const maxSize = 100 * 1024 * 1024; // 100MB
+        const maxSize = 500 * 1024 * 1024; // 500MB
 
         const hasValidMime = !!file.type && allowedTypes.includes(file.type);
         let extension = '';
@@ -34,7 +34,7 @@ const SecurityUtils = {
         }
 
         if (file.size > maxSize) {
-            throw new Error('File too large. Please upload a file smaller than 100MB.');
+            throw new Error('File too large. Please upload a file smaller than 500MB.');
         }
 
         return true;
@@ -309,56 +309,64 @@ const App = {
         const processAudioFile = async (file) => {
             try {
                 SecurityUtils.validateAudioFile(file);
-                isProcessing.value = true;
-                processingMessage.value = 'Uploading audio file...';
                 clearError();
 
-                const data = await chrome.storage.local.get(['authToken']);
+                const data = await chrome.storage.local.get(['authToken', 'transcripts']);
                 if (!data.authToken) {
                     throw new Error('Authentication required');
                 }
 
-                                 // Use data URL for small files, ArrayBuffer for larger ones to avoid message limits
-                 let payload = {};
-                 if (file.size <= 5 * 1024 * 1024) { // <= 5MB
-                     const dataUrl = await new Promise((resolve, reject) => {
-                         const reader = new FileReader();
-                         reader.onload = () => resolve(reader.result);
-                         reader.onerror = reject;
-                         reader.readAsDataURL(file);
-                     });
-                     payload = { dataUrl };
-                 } else {
-                     const arrayBuffer = await file.arrayBuffer();
-                     payload = { arrayBuffer };
-                 }
-                 processingMessage.value = 'Transcribing audio...';
-                 const payloadToSend = { filename: file.name || 'audio.m4a', ...payload, token: data.authToken };
-                 console.log('[POPUP] Sending upload payload', {
-                     filename: payloadToSend.filename,
-                     hasDataUrl: typeof payloadToSend.dataUrl === 'string',
-                     dataUrlPrefix: typeof payloadToSend.dataUrl === 'string' ? payloadToSend.dataUrl.slice(0, 30) : null,
-                     hasArrayBuffer: payloadToSend.arrayBuffer instanceof ArrayBuffer,
-                     arrayBufferBytes: payloadToSend.arrayBuffer ? payloadToSend.arrayBuffer.byteLength : 0
-                 });
-                 const res = await BackgroundBridge.startUpload(payloadToSend);
+                // Create a pending record immediately
+                const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+                const pendingRecord = {
+                    id,
+                    filename: file.name || 'audio.m4a',
+                    createdAt: Date.now(),
+                    status: 'pending',
+                    transcript: '',
+                    words: [],
+                    error: null
+                };
+                const existing = Array.isArray(data.transcripts) ? data.transcripts : [];
+                await chrome.storage.local.set({ transcripts: [pendingRecord, ...existing] });
+                await loadTranscripts();
 
-                if (!res?.success) {
-                    throw new Error(res?.message || 'Upload failed');
+                // Upload directly to server with the File to support large sizes
+                const result = await ApiService.uploadAudio(file, data.authToken);
+
+                if (!result || result.success !== true) {
+                    throw new Error(result?.message || 'Upload failed');
                 }
 
-                // Reload transcripts list from storage
+                // Update the record to success
+                const { transcripts = [] } = await chrome.storage.local.get(['transcripts']);
+                const updated = transcripts.map(t => t.id === id ? ({
+                    ...t,
+                    status: 'success',
+                    transcript: result.transcript || '',
+                    words: result.words || [],
+                    error: null
+                }) : t);
+                await chrome.storage.local.set({ transcripts: updated });
                 await loadTranscripts();
-                processingMessage.value = 'Transcription started in background';
             } catch (error) {
                 console.error('File processing failed:', error);
                 if (error.message.includes('tokens') || error.message.includes('quota')) {
                     showTokenWarning.value = true;
                 } else {
+                    // Mark latest pending as error if exists
+                    try {
+                        const { transcripts = [] } = await chrome.storage.local.get(['transcripts']);
+                        const idx = transcripts.findIndex(t => t.status === 'pending');
+                        if (idx !== -1) {
+                            transcripts[idx] = { ...transcripts[idx], status: 'error', error: error.message };
+                            await chrome.storage.local.set({ transcripts });
+                            await loadTranscripts();
+                        }
+                    } catch (_) {}
                     showError('Processing Failed', error.message);
                 }
             } finally {
-                isProcessing.value = false;
                 if (fileInput.value) fileInput.value.value = '';
             }
         };
@@ -587,7 +595,6 @@ const App = {
 
         const renderTranscriptItem = (item) => {
             const statusLabel = item.status === 'pending' ? '⏳' : item.status === 'success' ? '✅' : '❌';
-            const header = `${statusLabel} ${item.filename}`;
             const isEditing = editingId === item.id;
             const actions = [];
             if (item.status === 'success') {
@@ -601,11 +608,18 @@ const App = {
             }
             actions.push(h('button', { class: 'icon-btn danger', onClick: (e) => deleteSaved(item, e) }, '🗑️ Delete'));
 
+            const headerChildren = [];
+            if (item.status === 'pending') {
+                headerChildren.push(h('span', { class: 'inline-spinner', 'aria-label': 'Loading' }));
+            }
+            headerChildren.push(h('span', { class: 'filename-text' }, `${statusLabel} ${item.filename}`));
+
             return h('div', { class: 'saved-item', onClick: () => loadToReady(item) }, [
                 h('div', { class: 'saved-item-top' }, [
-                    h('div', { class: 'saved-item-header' }, header),
+                    h('div', { class: 'saved-item-header' }, headerChildren),
                     h('div', { class: 'saved-item-actions' }, actions)
                 ]),
+                item.status === 'pending' && h('div', { class: 'pending-note' }, 'Processing… Please don’t close your browser'),
                 item.status === 'success' && (!isEditing ? h('textarea', {
                     class: 'saved-item-text',
                     readonly: true,
@@ -632,13 +646,7 @@ const App = {
             // Header
             h('div', { class: 'header' }, [
                 h('img', { src: 'icons/icon32.png', alt: 'Open AudioAi', class: 'logo' }),
-                h('h1', 'Open AudioAi'),
-                isAuthenticated && h('button', { 
-                    class: 'logout-btn',
-                    onClick: logout 
-                }, [
-                    h('span', { class: 'logout-icon' }, '🚪')
-                ])
+                h('h1', 'Open AudioAi')
             ]),
 
             // Authentication Section
@@ -665,14 +673,20 @@ const App = {
                     h('img', { src: user.picture, alt: user.name, class: 'user-avatar' }),
                     h('div', { class: 'user-details' }, [
                         h('span', { class: 'user-name' }, user.name),
-                        h('span', { class: 'user-email' }, user.email)
+                        h('div', { class: 'email-row' }, [
+                            h('span', { class: 'user-email' }, user.email),
+                            h('button', { class: 'logout-btn', onClick: logout }, [
+                                h('span', { class: 'logout-icon' }, '🚪'),
+                                h('span', { class: 'logout-label' }, 'Log out')
+                            ])
+                        ])
                     ])
                 ]),
 
                 // Upload section
                 h('div', { class: 'upload-section' }, [
                     // Upload area
-                    !isProcessing && !transcript && h('div', {
+                    !transcript && h('div', {
                         class: ['upload-area', { 'drag-over': isDragOver }],
                         onDrop: handleDrop,
                         onDragover: handleDragOver,
@@ -696,24 +710,8 @@ const App = {
                         ])
                     ]),
 
-                    // Processing animation
-                    isProcessing && h('div', { class: 'processing-section' }, [
-                        h('div', { class: 'loading-animation' }, [
-                            h('div', { class: 'audio-wave' }, 
-                                Array.from({ length: 5 }, (_, i) => 
-                                    h('div', {
-                                        class: 'wave-bar',
-                                        style: { animationDelay: `${i * 0.1}s` }
-                                    })
-                                )
-                            )
-                        ]),
-                        h('h3', 'Processing Audio...'),
-                        h('p', processingMessage)
-                    ]),
-
                     // Transcript display
-                    transcript && !isProcessing && h('div', { class: 'transcript-section' }, [
+                    transcript && h('div', { class: 'transcript-section' }, [
                         h('div', { class: 'transcript-header' }, [
                             h('h3', 'Transcript Ready'),
                             h('div', { class: 'action-buttons' }, [
@@ -752,7 +750,7 @@ const App = {
                     ]),
 
                     // Saved transcripts list
-                    !isProcessing && h('div', { class: 'saved-section' }, [
+                    h('div', { class: 'saved-section' }, [
                         h('h3', 'Saved Transcripts'),
                         transcriptsList.length === 0 && h('p', { class: 'empty' }, 'No transcripts yet.'),
                         transcriptsList.length > 0 && h('div', { class: 'saved-list' }, transcriptsList.map(renderTranscriptItem))

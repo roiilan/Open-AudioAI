@@ -199,96 +199,92 @@ body {
 
 .upload-area h3 {
     font-size: 18px;
-    font-weight: 600;
     color: #2d3748;
     margin-bottom: 8px;
 }
 
 .upload-area p {
-    color: #718096;
-    margin-bottom: 20px;
+    font-size: 14px;
+    color: #4a5568;
+    margin-bottom: 16px;
 }
 
 .upload-btn {
     background: #667eea;
     color: white;
     border: none;
-    border-radius: 12px;
-    padding: 12px 24px;
-    font-weight: 500;
+    border-radius: 10px;
+    padding: 10px 16px;
     cursor: pointer;
     transition: all 0.2s ease;
+    font-weight: 600;
 }
 
 .upload-btn:hover {
     background: #5a67d8;
-    transform: translateY(-1px);
 }
 
-/* Processing Section */
+/* Processing */
 .processing-section {
-    text-align: center;
-    padding: 40px 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 20px;
 }
 
 .loading-animation {
-    margin-bottom: 24px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .audio-wave {
     display: flex;
-    justify-content: center;
-    align-items: center;
-    gap: 4px;
-    height: 60px;
+    gap: 6px;
 }
 
 .wave-bar {
     width: 6px;
+    height: 24px;
     background: #667eea;
-    border-radius: 3px;
-    animation: wave 1.2s ease-in-out infinite;
+    border-radius: 4px;
+    animation: wave 1.2s infinite ease-in-out;
 }
 
 @keyframes wave {
-    0%, 40%, 100% {
-        height: 10px;
-    }
-    20% {
-        height: 50px;
-    }
+    0%, 100% { transform: scaleY(0.5); opacity: 0.6; }
+    50% { transform: scaleY(1.2); opacity: 1; }
 }
 
-.processing-section h3 {
-    font-size: 18px;
-    font-weight: 600;
-    color: #2d3748;
-    margin-bottom: 8px;
-}
-
-.processing-section p {
-    color: #718096;
-}
-
-/* Transcript Section */
+/* Transcript display */
 .transcript-section {
-    background: #f7fafc;
-    border-radius: 16px;
-    padding: 20px;
     margin-top: 16px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 12px;
 }
 
 .transcript-header {
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    margin-bottom: 16px;
+    justify-content: space-between;
+    margin-bottom: 8px;
 }
 
-.transcript-header h3 {
-    font-size: 18px;
-    font-weight: 600;
-    color: #2d3748;
+.transcript-text {
+    width: 100%;
+    min-height: 160px;
+    padding: 8px;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+    resize: vertical;
+}
+
+.transcript-text.small {
+    min-height: 80px;
 }
 
 .action-buttons {
@@ -296,112 +292,77 @@ body {
     gap: 8px;
 }
 
-.copy-btn, .send-btn {
-    background: #48bb78;
+.copy-btn, .send-btn, .reset-btn {
+    background: #667eea;
     color: white;
     border: none;
     border-radius: 8px;
     padding: 8px 12px;
-    font-size: 12px;
-    font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s ease;
 }
 
 .copy-btn.copied {
-    background: #38a169;
+    background: #10b981;
 }
 
-.send-btn {
-    background: #667eea;
-}
-
-.copy-btn:hover {
-    background: #38a169;
-    transform: translateY(-1px);
-}
-
-.send-btn:hover {
-    background: #5a67d8;
-    transform: translateY(-1px);
-}
-
-.transcript-content {
-    margin-bottom: 16px;
-}
-
-.transcript-text {
-    width: 100%;
-    min-height: 120px;
-    padding: 12px;
-    border: 1px solid #e2e8f0;
-    border-radius: 8px;
-    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-    font-size: 12px;
-    line-height: 1.5;
-    background: white;
-    resize: vertical;
-}
-
-.reset-btn {
-    background: #e2e8f0;
-    color: #4a5568;
-    border: none;
-    border-radius: 8px;
-    padding: 10px 16px;
-    font-size: 14px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    width: 100%;
-}
-
-.reset-btn:hover {
-    background: #cbd5e0;
-}
-
-/* Error Section */
+/* Error */
 .error-section {
-    text-align: center;
-    padding: 30px 20px;
-    background: #fed7d7;
-    border-radius: 16px;
     margin-top: 16px;
-}
-
-.error-icon {
-    font-size: 40px;
-    margin-bottom: 16px;
-}
-
-.error-section h3 {
-    font-size: 16px;
-    font-weight: 600;
+    background: #fff5f5;
+    border: 1px solid #fed7d7;
     color: #c53030;
+    border-radius: 12px;
+    padding: 12px;
+}
+
+.error-icon { margin-bottom: 8px; }
+.retry-btn { background: #ef4444; color: white; border: none; border-radius: 8px; padding: 8px 12px; cursor: pointer; }
+
+/* Saved transcripts */
+.saved-section {
+    margin-top: 16px;
+    background: #ffffff;
+    border-top: 1px solid #e2e8f0;
+    padding: 12px 20px 20px;
+}
+
+.saved-section h3 {
+    font-size: 16px;
+    color: #2d3748;
     margin-bottom: 8px;
 }
 
-.error-section p {
-    color: #742a2a;
-    font-size: 14px;
-    margin-bottom: 20px;
+.transcript-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-height: 180px;
+    overflow-y: auto;
 }
 
-.retry-btn {
-    background: #e53e3e;
-    color: white;
-    border: none;
-    border-radius: 8px;
-    padding: 10px 20px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
+.transcript-item {
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 10px;
+    background: #f9fafb;
 }
 
-.retry-btn:hover {
-    background: #c53030;
-    transform: translateY(-1px);
+.transcript-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+    margin-bottom: 6px;
 }
+
+.file-name { font-weight: 600; color: #1f2937; }
+.status { font-size: 12px; color: #6b7280; }
+
+.transcript-preview { margin-top: 6px; }
+.transcript-error { margin-top: 6px; color: #b91c1c; font-size: 12px; }
+
+.empty-state { color: #6b7280; font-size: 12px; }
 
 /* Modal */
 .modal-overlay {

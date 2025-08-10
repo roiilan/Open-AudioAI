@@ -141,9 +141,28 @@ const App = {
         const error = ref(null);
         const isDragOver = ref(false);
         const isCopied = ref(false);
+        const copiedItemId = ref(null);
         const showTokenWarning = ref(false);
         const fileInput = ref(null);
         const transcriptsList = ref([]);
+        const editingId = ref(null);
+        const editingText = ref('');
+        const editingFilename = ref('');
+
+        // Extend BackgroundBridge methods
+        BackgroundBridge.deleteTranscript = (id) => new Promise((resolve) => {
+            chrome.runtime.sendMessage({ action: 'deleteTranscript', data: { id } }, (res) => resolve(res));
+        });
+        BackgroundBridge.updateTranscript = (payload) => new Promise((resolve) => {
+            chrome.runtime.sendMessage({ action: 'updateTranscript', data: payload }, (res) => resolve(res));
+        });
+        
+        const updateEditingText = (e) => {
+            editingText.value = e?.target?.value ?? '';
+        };
+        const updateEditingFilename = (e) => {
+            editingFilename.value = e?.target?.value ?? '';
+        };
 
         // Methods
         const getAuthToken = async (force = false) => {
@@ -357,6 +376,69 @@ const App = {
             }
         };
 
+        const copySavedTranscript = async (item, event) => {
+            try {
+                if (event) event.stopPropagation();
+                await navigator.clipboard.writeText(item.transcript || '');
+                copiedItemId.value = item.id;
+                setTimeout(() => { copiedItemId.value = null; }, 1500);
+            } catch (e) {
+                console.error('Copy saved transcript failed:', e);
+            }
+        };
+
+        const startEdit = (item, event) => {
+            if (event) event.stopPropagation();
+            editingId.value = item.id;
+            editingText.value = item.transcript || '';
+            editingFilename.value = item.filename || '';
+        };
+
+        const cancelEdit = (event) => {
+            if (event) event.stopPropagation();
+            editingId.value = null;
+            editingText.value = '';
+            editingFilename.value = '';
+        };
+
+        const saveEdit = async (event) => {
+            try {
+                if (event) event.stopPropagation();
+                if (!editingId.value) return;
+                const res = await BackgroundBridge.updateTranscript({
+                    id: editingId.value,
+                    transcript: editingText.value,
+                    filename: editingFilename.value
+                });
+                if (res?.success) {
+                    await loadTranscripts();
+                    editingId.value = null;
+                    editingText.value = '';
+                    editingFilename.value = '';
+                }
+            } catch (e) {
+                console.error('Save edit failed:', e);
+            }
+        };
+
+        const deleteSaved = async (item, event) => {
+            try {
+                if (event) event.stopPropagation();
+                const res = await BackgroundBridge.deleteTranscript(item.id);
+                if (res?.success) {
+                    await loadTranscripts();
+                }
+            } catch (e) {
+                console.error('Delete transcript failed:', e);
+            }
+        };
+
+        const loadToReady = (item) => {
+            if (item.status === 'success') {
+                transcript.value = SecurityUtils.sanitizeInput(item.transcript || '');
+            }
+        };
+
         const sendToChatGPT = async () => {
             try {
                 const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -460,9 +542,13 @@ const App = {
             error,
             isDragOver,
             isCopied,
+            copiedItemId,
             showTokenWarning,
             fileInput,
             transcriptsList,
+            editingId,
+            editingText,
+            editingFilename,
             // Methods
             signInWithGoogle,
             logout,
@@ -471,11 +557,19 @@ const App = {
             handleDragOver,
             handleDragLeave,
             copyTranscript,
+            copySavedTranscript,
             sendToChatGPT,
             resetUpload,
             clearError,
             closeTokenWarning,
-            openFileDialog
+            openFileDialog,
+            startEdit,
+            cancelEdit,
+            saveEdit,
+            deleteSaved,
+            loadToReady,
+            updateEditingText,
+            updateEditingFilename
         };
     },
 
@@ -485,19 +579,50 @@ const App = {
             processingMessage, error, isDragOver, isCopied, showTokenWarning,
             signInWithGoogle, logout, handleFileSelect, 
             handleDrop, handleDragOver, handleDragLeave, copyTranscript, sendToChatGPT, 
-            resetUpload, clearError, closeTokenWarning, openFileDialog, transcriptsList
+            resetUpload, clearError, closeTokenWarning, openFileDialog, transcriptsList,
+            editingId, editingText, editingFilename, startEdit, cancelEdit, saveEdit,
+            deleteSaved, copySavedTranscript, copiedItemId, loadToReady,
+            updateEditingText, updateEditingFilename
         } = this;
 
         const renderTranscriptItem = (item) => {
             const statusLabel = item.status === 'pending' ? '⏳' : item.status === 'success' ? '✅' : '❌';
             const header = `${statusLabel} ${item.filename}`;
-            return h('div', { class: 'saved-item' }, [
-                h('div', { class: 'saved-item-header' }, header),
-                item.status === 'success' && h('textarea', {
+            const isEditing = editingId === item.id;
+            const actions = [];
+            if (item.status === 'success') {
+                if (!isEditing) {
+                    actions.push(h('button', { class: 'icon-btn', onClick: (e) => copySavedTranscript(item, e) }, copiedItemId === item.id ? '✓ Copied' : '📋 Copy'));
+                    actions.push(h('button', { class: 'icon-btn', onClick: (e) => startEdit(item, e) }, '✏️ Edit'));
+                } else {
+                    actions.push(h('button', { class: 'icon-btn primary', onClick: (e) => saveEdit(e) }, '💾 Save'));
+                    actions.push(h('button', { class: 'icon-btn secondary', onClick: (e) => cancelEdit(e) }, '↩️ Cancel'));
+                }
+            }
+            actions.push(h('button', { class: 'icon-btn danger', onClick: (e) => deleteSaved(item, e) }, '🗑️ Delete'));
+
+            return h('div', { class: 'saved-item', onClick: () => loadToReady(item) }, [
+                h('div', { class: 'saved-item-top' }, [
+                    h('div', { class: 'saved-item-header' }, header),
+                    h('div', { class: 'saved-item-actions' }, actions)
+                ]),
+                item.status === 'success' && (!isEditing ? h('textarea', {
                     class: 'saved-item-text',
                     readonly: true,
                     value: item.transcript || ''
-                }),
+                }) : h('div', { class: 'saved-edit-form', onClick: (e) => e.stopPropagation() }, [
+                    h('input', {
+                        class: 'saved-item-filename',
+                        value: editingFilename,
+                        onInput: updateEditingFilename,
+                        placeholder: 'Filename'
+                    }),
+                    h('textarea', {
+                        class: 'saved-item-text editable',
+                        value: editingText,
+                        onInput: updateEditingText
+                    })
+                ])),
                 item.status === 'error' && h('div', { class: 'saved-item-error' }, item.error || 'Error'),
                 h('div', { class: 'saved-item-footer' }, new Date(item.createdAt).toLocaleString())
             ]);

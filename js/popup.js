@@ -299,15 +299,22 @@ const App = {
                     throw new Error('Authentication required');
                 }
 
-                                 // Read file as data URL (robust across contexts)
-                 const dataUrl = await new Promise((resolve, reject) => {
-                     const reader = new FileReader();
-                     reader.onload = () => resolve(reader.result);
-                     reader.onerror = reject;
-                     reader.readAsDataURL(file);
-                 });
+                                 // Use data URL for small files, ArrayBuffer for larger ones to avoid message limits
+                 let payload = {};
+                 if (file.size <= 5 * 1024 * 1024) { // <= 5MB
+                     const dataUrl = await new Promise((resolve, reject) => {
+                         const reader = new FileReader();
+                         reader.onload = () => resolve(reader.result);
+                         reader.onerror = reject;
+                         reader.readAsDataURL(file);
+                     });
+                     payload = { dataUrl };
+                 } else {
+                     const arrayBuffer = await file.arrayBuffer();
+                     payload = { arrayBuffer };
+                 }
                  processingMessage.value = 'Transcribing audio...';
-                 const res = await BackgroundBridge.startUpload({ filename: file.name || 'audio.m4a', dataUrl, token: data.authToken });
+                 const res = await BackgroundBridge.startUpload({ filename: file.name || 'audio.m4a', ...payload, token: data.authToken });
 
                 if (!res?.success) {
                     throw new Error(res?.message || 'Upload failed');

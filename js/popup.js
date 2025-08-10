@@ -83,6 +83,49 @@ const ApiService = {
         formData.append('audio_file', file);
         formData.append('nonce', SecurityUtils.generateNonce());
 
+        function toNumberSafe(value) {
+            if (typeof value === 'number') return value;
+            if (typeof value === 'string') {
+                const trimmed = value.trim();
+                const num = Number(trimmed);
+                if (!Number.isNaN(num)) return num;
+            }
+            return null;
+        }
+        function normalizeTranscriptionResponse(raw) {
+            let words = [];
+            let transcript = '';
+            if (Array.isArray(raw)) {
+                words = raw;
+            } else if (raw && typeof raw === 'object') {
+                if (Array.isArray(raw.words)) words = raw.words;
+                if (typeof raw.transcript === 'string') transcript = raw.transcript;
+            }
+            words = (words || []).map((w) => {
+                const startNum = toNumberSafe(w?.start);
+                const endNum = toNumberSafe(w?.end);
+                return {
+                    word: typeof w?.word === 'string' ? w.word : String(w?.word ?? ''),
+                    start: typeof startNum === 'number' ? startNum : null,
+                    end: typeof endNum === 'number' ? endNum : null,
+                };
+            });
+            if (!transcript && words.length) {
+                transcript = words.map(w => w.word || '').join('').replace(/\s+/g, ' ').trim();
+            }
+            return { success: true, transcript: transcript || '', words };
+        }
+        function parseResponseText(text) {
+            try { return normalizeTranscriptionResponse(JSON.parse(text)); } catch (_) {}
+            let cleaned = String(text || '').trim();
+            cleaned = cleaned.replace(/np\.float64\(\s*([^)]+?)\s*\)/g, '$1');
+            cleaned = cleaned.replace(/\bNone\b/g, 'null').replace(/\bTrue\b/g, 'true').replace(/\bFalse\b/g, 'false');
+            cleaned = cleaned.replace(/'([^'\n\r]+)'\s*:/g, '"$1":');
+            cleaned = cleaned.replace(/:\s*'([^']*)'/g, ': "$1"');
+            const obj = JSON.parse(cleaned);
+            return normalizeTranscriptionResponse(obj);
+        }
+
         try {
             const response = await fetch(`${this.baseUrl}/transcribe/`, {
                 method: 'POST',
@@ -92,12 +135,18 @@ const ApiService = {
                 body: formData
             });
 
+            const rawText = await response.text().catch(() => '');
+
             if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+                try {
+                    const maybe = JSON.parse(rawText);
+                    throw new Error(maybe?.message || `HTTP error! status: ${response.status}`);
+                } catch (_) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
             }
 
-            return await response.json();
+            return parseResponseText(rawText);
         } catch (error) {
             console.error('Audio upload failed:', error);
             throw error;

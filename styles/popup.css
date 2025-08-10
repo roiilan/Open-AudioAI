@@ -496,6 +496,131 @@ body {
     background: #5a67d8;
 }
 
+/* Saved Transcripts */
+.saved-section {
+    margin-top: 20px;
+}
+
+.saved-section h3 {
+    font-size: 16px;
+    font-weight: 600;
+    color: #2d3748;
+    margin-bottom: 8px;
+}
+
+.saved-section .empty {
+    color: #718096;
+    font-size: 13px;
+}
+
+.saved-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-height: 220px;
+    overflow: auto;
+    padding-right: 4px;
+}
+
+.saved-item {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 12px;
+    transition: background 0.2s ease, transform 0.1s ease, box-shadow 0.2s ease;
+    cursor: pointer;
+}
+
+.saved-item:hover {
+    background: #edf2f7;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 10px rgba(0,0,0,0.06);
+}
+
+.saved-item-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.saved-item-header {
+    font-weight: 600;
+    color: #1a202c;
+    font-size: 13px;
+}
+
+.saved-item-actions {
+    display: flex;
+    gap: 6px;
+}
+
+.icon-btn {
+    background: #e2e8f0;
+    border: none;
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-size: 12px;
+    color: #2d3748;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.icon-btn:hover {
+    background: #cbd5e0;
+}
+
+.icon-btn.primary { background: #667eea; color: white; }
+.icon-btn.primary:hover { background: #5a67d8; }
+.icon-btn.secondary { background: #e2e8f0; color: #2d3748; }
+.icon-btn.secondary:hover { background: #cbd5e0; }
+.icon-btn.danger { background: #ef4444; color: white; }
+.icon-btn.danger:hover { background: #dc2626; }
+
+.saved-item-text {
+    width: 100%;
+    min-height: 60px;
+    margin-top: 8px;
+    padding: 10px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 12px;
+    background: white;
+}
+
+.saved-item-text.editable {
+    background: #fffdfa;
+}
+
+.saved-edit-form {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.saved-item-filename {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    font-size: 12px;
+    background: white;
+}
+
+.saved-item-error {
+    margin-top: 8px;
+    color: #c53030;
+    font-size: 12px;
+}
+
+.saved-item-footer {
+    margin-top: 6px;
+    color: #718096;
+    font-size: 11px;
+}
+
 /* Responsive adjustments */
 @media (max-width: 400px) {
     body {

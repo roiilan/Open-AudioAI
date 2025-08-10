@@ -330,6 +330,50 @@ async function handleMessage(request, sender) {
             const { transcripts = [] } = await chrome.storage.local.get(['transcripts']);
             return { success: true, transcripts };
         }
+        case 'deleteTranscript': {
+            try {
+                const id = data?.id;
+                if (!id) {
+                    return { success: false, message: 'Missing id' };
+                }
+                const { transcripts = [] } = await chrome.storage.local.get(['transcripts']);
+                const updated = transcripts.filter(t => t.id !== id);
+                await chrome.storage.local.set({ transcripts: updated });
+                return { success: true };
+            } catch (e) {
+                SecurityManager.logSecurity('delete_transcript_failed', { error: e.message });
+                return { success: false, message: 'Failed to delete transcript' };
+            }
+        }
+        case 'updateTranscript': {
+            try {
+                const { id, transcript: newTranscript, filename: newFilename } = data || {};
+                if (!id) {
+                    return { success: false, message: 'Missing id' };
+                }
+                const { transcripts = [] } = await chrome.storage.local.get(['transcripts']);
+                let updatedRecord = null;
+                const updated = transcripts.map(t => {
+                    if (t.id === id) {
+                        updatedRecord = { ...t };
+                        if (typeof newTranscript === 'string') {
+                            updatedRecord.transcript = newTranscript;
+                        }
+                        if (typeof newFilename === 'string' && newFilename.trim()) {
+                            updatedRecord.filename = newFilename.trim();
+                        }
+                        updatedRecord.updatedAt = Date.now();
+                        return updatedRecord;
+                    }
+                    return t;
+                });
+                await chrome.storage.local.set({ transcripts: updated });
+                return { success: true, transcript: updatedRecord };
+            } catch (e) {
+                SecurityManager.logSecurity('update_transcript_failed', { error: e.message });
+                return { success: false, message: 'Failed to update transcript' };
+            }
+        }
         default:
             SecurityManager.logSecurity('unknown_action', { action });
             return { error: 'Unknown action' };

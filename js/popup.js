@@ -119,6 +119,7 @@ const App = {
         const isCopied = ref(false);
         const showTokenWarning = ref(false);
         const fileInput = ref(null);
+        const transcripts = ref([]);
 
         // Methods
         const getAuthToken = async (force = false) => {
@@ -230,6 +231,7 @@ const App = {
                 user.value = null;
                 isAuthenticated.value = false;
                 resetUpload();
+                transcripts.value = [];
             } catch (error) {
                 console.error('Logout failed:', error);
             }
@@ -265,35 +267,39 @@ const App = {
         const processAudioFile = async (file) => {
             try {
                 SecurityUtils.validateAudioFile(file);
-                
                 isProcessing.value = true;
-                processingMessage.value = 'Uploading audio file...';
+                processingMessage.value = 'Sending to background for upload...';
                 clearError();
-                
-                const data = await chrome.storage.local.get(['authToken']);
-                if (!data.authToken) {
-                    throw new Error('Authentication required');
+
+                // Read file into ArrayBuffer for transfer to background
+                const arrayBuffer = await file.arrayBuffer();
+
+                // Start background upload via service worker
+                const response = await chrome.runtime.sendMessage({
+                    action: 'uploadAudioInBackground',
+                    data: {
+                        fileName: file.name,
+                        mimeType: file.type || 'application/octet-stream',
+                        originalSize: file.size,
+                        arrayBuffer
+                    }
+                });
+
+                if (!response || !response.started) {
+                    throw new Error(response?.error || 'Failed to start background upload');
                 }
-                
-                processingMessage.value = 'Transcribing audio...';
-                const result = await ApiService.uploadAudio(file, data.authToken);
-                
-                if (result.success) {
-                    transcript.value = SecurityUtils.sanitizeInput(result.transcript);
-                    processingMessage.value = 'Transcription complete!';
-                } else {
-                    throw new Error(result.message || 'Transcription failed');
-                }
+
+                processingMessage.value = 'Upload started in background. You can close this popup.';
+                // Reset local UI upload state; background will handle persistence
+                setTimeout(() => {
+                    resetUpload();
+                    // Optionally refresh transcripts list after a short delay
+                    refreshTranscripts();
+                }, 800);
             } catch (error) {
                 console.error('File processing failed:', error);
-                
-                if (error.message.includes('tokens') || error.message.includes('quota')) {
-                    showTokenWarning.value = true;
-                } else {
-                    showError('Processing Failed', error.message);
-                }
+                showError('Processing Failed', error.message);
             } finally {
-                isProcessing.value = false;
                 if (fileInput.value) {
                     fileInput.value.value = '';
                 }
@@ -374,14 +380,31 @@ const App = {
             }
         };
 
+        const refreshTranscripts = async () => {
+            try {
+                const { transcripts: stored } = await chrome.storage.local.get(['transcripts']);
+                transcripts.value = Array.isArray(stored) ? stored : [];
+            } catch (e) {
+                console.warn('Failed to load transcripts:', e);
+            }
+        };
+
         // Initialize app
         onMounted(async () => {
             try {
-                const data = await chrome.storage.local.get(['user', 'isAuthenticated', 'authToken']);
+                const data = await chrome.storage.local.get(['user', 'isAuthenticated', 'authToken', 'transcripts']);
                 if (data.isAuthenticated && data.user && data.authToken) {
                     user.value = data.user;
                     isAuthenticated.value = true;
                 }
+                transcripts.value = Array.isArray(data.transcripts) ? data.transcripts : [];
+
+                // Listen for storage changes to keep list live
+                chrome.storage.onChanged.addListener((changes, area) => {
+                    if (area === 'local' && changes.transcripts) {
+                        transcripts.value = changes.transcripts.newValue || [];
+                    }
+                });
             } catch (error) {
                 console.error('Failed to load stored data:', error);
             }
@@ -400,6 +423,7 @@ const App = {
             isCopied,
             showTokenWarning,
             fileInput,
+            transcripts,
             // Methods
             signInWithGoogle,
             logout,
@@ -412,7 +436,8 @@ const App = {
             resetUpload,
             clearError,
             closeTokenWarning,
-            openFileDialog
+            openFileDialog,
+            refreshTranscripts
         };
     },
 
@@ -422,7 +447,7 @@ const App = {
             processingMessage, error, isDragOver, isCopied, showTokenWarning,
             signInWithGoogle, logout, handleFileSelect, 
             handleDrop, handleDragOver, handleDragLeave, copyTranscript, sendToChatGPT, 
-            resetUpload, clearError, closeTokenWarning, openFileDialog
+            resetUpload, clearError, closeTokenWarning, openFileDialog, transcripts
         } = this;
 
         return h('div', [
@@ -493,7 +518,7 @@ const App = {
                         ])
                     ]),
 
-                    // Processing animation
+                    // Processing info
                     isProcessing && h('div', { class: 'processing-section' }, [
                         h('div', { class: 'loading-animation' }, [
                             h('div', { class: 'audio-wave' }, 
@@ -505,11 +530,11 @@ const App = {
                                 )
                             )
                         ]),
-                        h('h3', 'Processing Audio...'),
+                        h('h3', 'Processing...'),
                         h('p', processingMessage)
                     ]),
 
-                    // Transcript display
+                    // Latest transcript display (kept for compatibility)
                     transcript && !isProcessing && h('div', { class: 'transcript-section' }, [
                         h('div', { class: 'transcript-header' }, [
                             h('h3', 'Transcript Ready'),
@@ -547,34 +572,31 @@ const App = {
                             onClick: clearError
                         }, 'Try Again')
                     ])
-                ])
-            ]),
+                ]),
 
-            // Token Warning Modal
-            showTokenWarning && h('div', {
-                class: 'modal-overlay',
-                onClick: closeTokenWarning
-            }, [
-                h('div', {
-                    class: 'modal-content',
-                    onClick: (e) => e.stopPropagation()
-                }, [
-                    h('div', { class: 'modal-header' }, [
-                        h('h3', 'Insufficient Tokens'),
-                        h('button', {
-                            class: 'close-btn',
-                            onClick: closeTokenWarning
-                        }, '×')
-                    ]),
-                    h('div', { class: 'modal-body' }, [
-                        h('p', "You don't have enough tokens to process this audio file. Please check your account balance or upgrade your plan.")
-                    ]),
-                    h('div', { class: 'modal-footer' }, [
-                        h('button', {
-                            class: 'modal-btn',
-                            onClick: closeTokenWarning
-                        }, 'Understood')
-                    ])
+                // Saved transcripts list
+                h('div', { class: 'saved-section' }, [
+                    h('h3', 'Saved Transcripts'),
+                    transcripts && transcripts.length > 0
+                        ? h('ul', { class: 'transcript-list' },
+                            transcripts.map((item) => h('li', { class: 'transcript-item' }, [
+                                h('div', { class: 'transcript-meta' }, [
+                                    h('span', { class: 'file-name' }, item.fileName || 'Unknown file'),
+                                    h('span', { class: 'status' }, item.status)
+                                ]),
+                                item.status === 'done' && item.transcript && h('div', { class: 'transcript-preview' }, [
+                                    h('textarea', {
+                                        class: 'transcript-text small',
+                                        readonly: true,
+                                        value: item.transcript
+                                    })
+                                ]),
+                                item.status === 'error' && h('div', { class: 'transcript-error' }, [
+                                    h('span', item.errorMessage || 'Failed')
+                                ])
+                            ]))
+                        )
+                        : h('p', { class: 'empty-state' }, 'No transcripts yet')
                 ])
             ])
         ]);

@@ -15,7 +15,8 @@ chrome.runtime.onInstalled.addListener((details) => {
                 enableSecurityLogging: true,
                 validateApiRequests: true,
                 enforceHttpsOnly: true
-            }
+            },
+            transcripts: []
         });
         
         // Open welcome page or setup instructions
@@ -153,6 +154,36 @@ const AuthManager = {
     }
 };
 
+// Transcript storage helpers
+async function getStoredTranscripts() {
+    const { transcripts } = await chrome.storage.local.get(['transcripts']);
+    return Array.isArray(transcripts) ? transcripts : [];
+}
+
+async function setStoredTranscripts(transcripts) {
+    await chrome.storage.local.set({ transcripts });
+}
+
+function generateRecordId() {
+    const array = new Uint8Array(12);
+    crypto.getRandomValues(array);
+    return Array.from(array, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function addTranscriptRecord(record) {
+    const transcripts = await getStoredTranscripts();
+    transcripts.unshift(record);
+    await setStoredTranscripts(transcripts);
+}
+
+async function updateTranscriptRecord(recordId, patch) {
+    const transcripts = await getStoredTranscripts();
+    const index = transcripts.findIndex((r) => r.id === recordId);
+    if (index === -1) return;
+    transcripts[index] = { ...transcripts[index], ...patch };
+    await setStoredTranscripts(transcripts);
+}
+
 // Message handling with security validation
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     // Security validation
@@ -191,6 +222,9 @@ async function handleMessage(request, sender) {
             
         case 'checkApiHealth':
             return await checkApiHealth();
+
+        case 'uploadAudioInBackground':
+            return await startBackgroundUpload(data);
             
         default:
             SecurityManager.logSecurity('unknown_action', { action });
@@ -262,6 +296,89 @@ async function checkApiHealth() {
     }
 }
 
+// Background upload implementation
+async function startBackgroundUpload(data) {
+    try {
+        const { fileName, mimeType, arrayBuffer, originalSize } = data || {};
+        if (!fileName || !arrayBuffer) {
+            return { started: false, error: 'Missing file data' };
+        }
+        if (originalSize && originalSize !== arrayBuffer.byteLength) {
+            return { started: false, error: `Size mismatch: ${originalSize} vs ${arrayBuffer.byteLength}` };
+        }
+
+        const { authToken } = await chrome.storage.local.get(['authToken']);
+        if (!authToken) {
+            return { started: false, error: 'Authentication required' };
+        }
+
+        const recordId = generateRecordId();
+        const createdAt = Date.now();
+
+        const initialRecord = {
+            id: recordId,
+            fileName,
+            mimeType: mimeType || 'application/octet-stream',
+            status: 'uploading',
+            createdAt,
+            updatedAt: createdAt
+        };
+        await addTranscriptRecord(initialRecord);
+
+        // Start async upload without blocking the response
+        (async () => {
+            try {
+                const formData = new FormData();
+                const blob = new Blob([arrayBuffer], { type: mimeType || 'application/octet-stream' });
+                // Use Blob to avoid potential File() compatibility gaps
+                formData.append('audio_file', blob, fileName);
+                formData.append('nonce', crypto.getRandomValues(new Uint32Array(1))[0].toString(16));
+
+                const baseUrl = 'http://localhost:8000'; // TODO: make configurable
+                const response = await fetch(`${baseUrl}/transcribe/`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: formData
+                });
+
+                const isJson = response.headers.get('content-type')?.includes('application/json');
+                const payload = isJson ? await response.json() : null;
+
+                if (!response.ok) {
+                    const message = payload?.message || `HTTP ${response.status}`;
+                    await updateTranscriptRecord(recordId, {
+                        status: 'error',
+                        errorMessage: message,
+                        updatedAt: Date.now()
+                    });
+                    return;
+                }
+
+                const transcriptText = payload?.transcript || '';
+                await updateTranscriptRecord(recordId, {
+                    status: 'done',
+                    transcript: transcriptText,
+                    updatedAt: Date.now()
+                });
+            } catch (err) {
+                await updateTranscriptRecord(recordId, {
+                    status: 'error',
+                    errorMessage: err?.message || 'Upload failed',
+                    updatedAt: Date.now()
+                });
+                SecurityManager.logSecurity('background_upload_failed', { error: err?.message });
+            }
+        })();
+
+        return { started: true, id: recordId };
+    } catch (error) {
+        SecurityManager.logSecurity('start_background_upload_error', { error: error.message });
+        return { started: false, error: 'Internal error' };
+    }
+}
+
 // Cleanup expired data periodically
 setInterval(async () => {
     try {
@@ -283,23 +400,13 @@ setInterval(async () => {
     }
 }, 24 * 60 * 60 * 1000); // Run daily
 
-// Handle extension uninstall/disable
+// Handle service worker suspend (do NOT clear user data here)
 chrome.runtime.onSuspend.addListener(async () => {
     try {
-        // Clean up sensitive data
-        await chrome.storage.local.clear();
-        
-        // Revoke authentication tokens
-        const result = await chrome.storage.local.get(['userData']);
-        if (result.userData && result.userData.accessToken) {
-            chrome.identity.removeCachedAuthToken({ 
-                token: result.userData.accessToken 
-            });
-        }
-        
-        SecurityManager.logSecurity('extension_suspended', {});
+        // Avoid clearing storage to preserve transcripts and session between popup openings
+        SecurityManager.logSecurity('service_worker_suspended', {});
     } catch (error) {
-        console.error('Error during extension suspension:', error);
+        console.error('Error during extension suspension handler:', error);
     }
 });
 

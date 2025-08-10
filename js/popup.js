@@ -16,12 +16,20 @@ const SecurityUtils = {
     // Validate file type and size
     validateAudioFile(file) {
         const allowedTypes = [
-            'audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/ogg', 
-            'audio/aac', 'audio/m4a', 'audio/flac'
+            'audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/ogg',
+            'audio/aac', 'audio/m4a', 'audio/mp4', 'audio/x-m4a', 'audio/flac'
         ];
+        const allowedExtensions = ['mp3', 'wav', 'ogg', 'aac', 'm4a', 'flac'];
         const maxSize = 100 * 1024 * 1024; // 100MB
 
-        if (!allowedTypes.includes(file.type)) {
+        const hasValidMime = !!file.type && allowedTypes.includes(file.type);
+        let extension = '';
+        if (file.name && file.name.indexOf('.') !== -1) {
+            extension = file.name.split('.').pop().toLowerCase();
+        }
+        const hasValidExtension = allowedExtensions.includes(extension);
+
+        if (!hasValidMime && !hasValidExtension) {
             throw new Error('Invalid file type. Please upload an audio file.');
         }
 

@@ -280,6 +280,7 @@ const App = {
                     data: {
                         fileName: file.name,
                         mimeType: file.type || 'application/octet-stream',
+                        originalSize: file.size,
                         arrayBuffer
                     }
                 });

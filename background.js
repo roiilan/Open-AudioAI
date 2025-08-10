@@ -299,9 +299,12 @@ async function checkApiHealth() {
 // Background upload implementation
 async function startBackgroundUpload(data) {
     try {
-        const { fileName, mimeType, arrayBuffer } = data || {};
+        const { fileName, mimeType, arrayBuffer, originalSize } = data || {};
         if (!fileName || !arrayBuffer) {
             return { started: false, error: 'Missing file data' };
+        }
+        if (originalSize && originalSize !== arrayBuffer.byteLength) {
+            return { started: false, error: `Size mismatch: ${originalSize} vs ${arrayBuffer.byteLength}` };
         }
 
         const { authToken } = await chrome.storage.local.get(['authToken']);
@@ -327,9 +330,8 @@ async function startBackgroundUpload(data) {
             try {
                 const formData = new FormData();
                 const blob = new Blob([arrayBuffer], { type: mimeType || 'application/octet-stream' });
-                // In MV3, File constructor is available in SW context
-                const file = new File([blob], fileName, { type: blob.type });
-                formData.append('audio_file', file);
+                // Use Blob to avoid potential File() compatibility gaps
+                formData.append('audio_file', blob, fileName);
                 formData.append('nonce', crypto.getRandomValues(new Uint32Array(1))[0].toString(16));
 
                 const baseUrl = 'http://localhost:8000'; // TODO: make configurable

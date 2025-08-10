@@ -670,15 +670,31 @@ const App = {
             isAuthenticated && h('div', { class: 'main-app' }, [
                 // User info
                 h('div', { class: 'user-info' }, [
-                    h('img', { src: user.picture, alt: user.name, class: 'user-avatar' }),
-                    h('div', { class: 'user-details' }, [
-                        h('span', { class: 'user-name' }, user.name),
-                        h('div', { class: 'email-row' }, [
-                            h('span', { class: 'user-email' }, user.email),
-                            h('button', { class: 'logout-btn', onClick: logout }, [
-                                h('span', { class: 'logout-icon' }, '🚪'),
-                                h('span', { class: 'logout-label' }, 'Log out')
+                    h('div', { class: 'user-profile' }, [
+                        h('img', { src: user.picture, alt: user.name, class: 'user-avatar' }),
+                        h('div', { class: 'user-details' }, [
+                            h('span', { class: 'user-name' }, user.name),
+                            h('div', { class: 'email-row' }, [
+                                h('span', { class: 'user-email' }, user.email)
                             ])
+                        ])
+                    ]),
+                    h('button', { class: 'logout-btn', onClick: logout, title: 'Log out', 'aria-label': 'Log out' }, [
+                        h('svg', {
+                            xmlns: 'http://www.w3.org/2000/svg',
+                            viewBox: '0 0 24 24',
+                            fill: 'none',
+                            stroke: 'currentColor',
+                            'stroke-width': '1.8',
+                            'stroke-linecap': 'round',
+                            'stroke-linejoin': 'round',
+                            width: '20',
+                            height: '20',
+                            class: 'logout-svg'
+                        }, [
+                            h('path', { d: 'M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6A2.25 2.25 0 0 0 5.25 5.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15' }),
+                            h('path', { d: 'M18 12H8.25' }),
+                            h('path', { d: 'M15 9l3 3-3 3' })
                         ])
                     ])
                 ]),

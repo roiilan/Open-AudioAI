@@ -52,30 +52,32 @@ body {
     border-radius: 4px;
 }
 
-/* Logout button (inline next to email) */
+/* Logout button (icon-only) */
 .logout-btn {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
-    border: none;
-    border-radius: 9999px;
-    padding: 6px 10px;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: #e5e7eb; /* neutral gray */
+    color: #374151;
+    border: 1px solid #e5e7eb;
     cursor: pointer;
-    transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.2s ease;
-    color: #fff;
-    font-size: 12px;
-    font-weight: 600;
-    box-shadow: 0 2px 8px rgba(239, 68, 68, 0.35);
+    transition: background 0.2s ease, transform 0.15s ease, box-shadow 0.15s ease, color 0.2s ease;
 }
 
 .logout-btn:hover {
+    background: #d1d5db;
+    color: #1f2937;
     transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.45);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
 }
 
-.logout-icon { font-size: 14px; }
-.logout-label { letter-spacing: 0.2px; }
+.logout-svg { display: block; }
+
+/* Remove old gradient red logout styles */
+/* .logout-icon, .logout-label no longer used */
 
 /* Authentication Section */
 .auth-section {
@@ -149,9 +151,15 @@ body {
 .user-info {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     padding: 20px;
     background: #f8fafc;
     border-bottom: 1px solid #e2e8f0;
+}
+
+.user-profile {
+    display: flex;
+    align-items: center;
 }
 
 .user-avatar {
@@ -289,12 +297,17 @@ body {
     color: #2d3748;
 }
 
+/* Action buttons alignment tweaks */
 .action-buttons {
     display: flex;
     gap: 8px;
+    align-items: center;
 }
 
 .copy-btn, .send-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     background: #48bb78;
     color: white;
     border: none;
@@ -341,21 +354,24 @@ body {
     resize: vertical;
 }
 
+/* Upload Another File button restyle */
 .reset-btn {
-    background: #e2e8f0;
-    color: #4a5568;
-    border: none;
-    border-radius: 8px;
-    padding: 10px 16px;
-    font-size: 14px;
+    background: #f3f4f6; /* subtle neutral */
+    color: #374151;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-size: 13px;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: background 0.2s ease, transform 0.15s ease, box-shadow 0.15s ease, border-color 0.2s ease;
     width: 100%;
 }
 
 .reset-btn:hover {
-    background: #cbd5e0;
+    background: #e5e7eb;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
 }
 
 /* Error Section */

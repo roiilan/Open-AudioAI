@@ -157,13 +157,79 @@ const AuthManager = {
 const UploadManager = (() => {
     const SERVER_BASE_URL = 'http://localhost:8000';
 
+    function toNumberSafe(value) {
+        if (typeof value === 'number') return value;
+        if (typeof value === 'string') {
+            const trimmed = value.trim();
+            const num = Number(trimmed);
+            if (!Number.isNaN(num)) return num;
+        }
+        return null;
+    }
+
+    function normalizeTranscriptionResponse(raw) {
+        let words = [];
+        let transcript = '';
+
+        if (Array.isArray(raw)) {
+            words = raw;
+        } else if (raw && typeof raw === 'object') {
+            if (Array.isArray(raw.words)) words = raw.words;
+            if (typeof raw.transcript === 'string') transcript = raw.transcript;
+        }
+
+        // Coerce start/end into numbers and ensure word text
+        words = (words || []).map((w) => {
+            const startNum = toNumberSafe(w?.start);
+            const endNum = toNumberSafe(w?.end);
+            return {
+                word: typeof w?.word === 'string' ? w.word : String(w?.word ?? ''),
+                start: typeof startNum === 'number' ? startNum : null,
+                end: typeof endNum === 'number' ? endNum : null,
+            };
+        });
+
+        if (!transcript && words.length) {
+            // Many servers include leading spaces in word tokens; joining without separator preserves spacing
+            transcript = words.map(w => w.word || '').join('').replace(/\s+/g, ' ').trim();
+        }
+
+        return { success: true, transcript: transcript || '', words };
+    }
+
+    function parseTranscriptionResponseText(text) {
+        // First try strict JSON
+        try {
+            const obj = JSON.parse(text);
+            return normalizeTranscriptionResponse(obj);
+        } catch (_) {}
+
+        // Attempt to sanitize Python-like repr into JSON
+        let cleaned = String(text || '').trim();
+        // Replace np.float64(1.23) -> 1.23
+        cleaned = cleaned.replace(/np\.float64\(\s*([^)]+?)\s*\)/g, '$1');
+        // Replace Python booleans and None
+        cleaned = cleaned.replace(/\bNone\b/g, 'null').replace(/\bTrue\b/g, 'true').replace(/\bFalse\b/g, 'false');
+        // Quote keys: 'key': -> "key":
+        cleaned = cleaned.replace(/'([^'\n\r]+)'\s*:/g, '"$1":');
+        // Quote string values: : 'value' -> : "value"
+        cleaned = cleaned.replace(/:\s*'([^']*)'/g, ': "$1"');
+
+        try {
+            const obj2 = JSON.parse(cleaned);
+            return normalizeTranscriptionResponse(obj2);
+        } catch (e) {
+            throw new Error('Unable to parse server response');
+        }
+    }
+
     async function saveTranscriptRecord(record) {
         try {
             const { transcripts = [] } = await chrome.storage.local.get(['transcripts']);
-            transcripts.unshift(record);
-            await chrome.storage.local.set({ transcripts });
-        } catch (error) {
-            console.error('Failed saving transcript record:', error);
+            const updated = [record, ...transcripts];
+            await chrome.storage.local.set({ transcripts: updated });
+        } catch (e) {
+            console.warn('Failed to save transcript record', e);
         }
     }
 
@@ -209,30 +275,32 @@ const UploadManager = (() => {
             body: formData,
         });
 
-        let json;
+        const rawText = await response.text().catch(() => '');
+
         if (!response.ok) {
-            const text = await response.text().catch(() => '');
-            console.warn('[Upload] Server not OK', { status: response.status, body: text });
+            console.warn('[Upload] Server not OK', { status: response.status, body: rawText?.slice(0, 500) });
+            // Try to extract message from text
             try {
-                json = text ? JSON.parse(text) : null;
+                const maybe = JSON.parse(rawText);
+                throw new Error(maybe?.message || `Server error ${response.status}`);
             } catch (_) {
-                json = null;
+                throw new Error(`Server error ${response.status}`);
             }
-            throw new Error(json?.message || `Server error ${response.status}`);
         }
 
+        let normalized;
         try {
-            json = await response.json();
+            normalized = parseTranscriptionResponseText(rawText);
         } catch (e) {
-            throw new Error(`Invalid JSON response (${response.status})`);
+            throw new Error(`Invalid response format (${response.status})`);
         }
 
-        if (!json.success) {
-            throw new Error(json?.message || 'Transcription failed');
+        if (!normalized || typeof normalized !== 'object') {
+            throw new Error('Transcription failed');
         }
 
         console.log('[Upload] Success', { id, bytes: blob.size });
-        return json; // { success: true, transcript, words }
+        return normalized; // { success: true, transcript, words }
     }
 
     async function startUpload({ filename, arrayBuffer, dataUrl, token }) {

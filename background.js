@@ -179,9 +179,24 @@ const UploadManager = (() => {
         };
     }
 
-    async function uploadArrayBuffer({ id, filename, arrayBuffer, token }) {
+    async function toBlobFromPayload({ arrayBuffer, dataUrl, mime = 'audio/m4a' }) {
+        try {
+            if (dataUrl && typeof dataUrl === 'string' && dataUrl.startsWith('data:')) {
+                const resp = await fetch(dataUrl);
+                return await resp.blob();
+            }
+            if (arrayBuffer instanceof ArrayBuffer) {
+                return new Blob([arrayBuffer], { type: mime });
+            }
+            throw new Error('No valid file payload');
+        } catch (e) {
+            throw new Error('Failed to build Blob from payload');
+        }
+    }
+
+    async function uploadPayload({ id, filename, arrayBuffer, dataUrl, token }) {
+        const blob = await toBlobFromPayload({ arrayBuffer, dataUrl });
         const formData = new FormData();
-        const blob = new Blob([arrayBuffer], { type: 'audio/m4a' });
         formData.append('audio_file', blob, filename);
         formData.append('nonce', crypto.getRandomValues(new Uint32Array(1))[0].toString(16));
 
@@ -205,17 +220,16 @@ const UploadManager = (() => {
         return json; // { success: true, transcript, words }
     }
 
-    async function startUpload({ filename, arrayBuffer, token }) {
+    async function startUpload({ filename, arrayBuffer, dataUrl, token }) {
         const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         const pendingRecord = buildRecord({ id, filename, status: 'pending' });
         await saveTranscriptRecord(pendingRecord);
         notifyProgress({ id, status: 'pending' });
 
         try {
-            const { transcript, words } = await uploadArrayBuffer({ id, filename, arrayBuffer, token });
+            const { transcript, words } = await uploadPayload({ id, filename, arrayBuffer, dataUrl, token });
             const successRecord = buildRecord({ id, filename, status: 'success', transcript, words });
 
-            // Replace the pending record with success for same id
             const { transcripts = [] } = await chrome.storage.local.get(['transcripts']);
             const updated = transcripts.map(t => t.id === id ? successRecord : t);
             await chrome.storage.local.set({ transcripts: updated });
@@ -280,11 +294,11 @@ async function handleMessage(request, sender) {
             return await checkApiHealth();
             
         case 'startBackgroundUpload': {
-            const { filename, arrayBuffer, token } = data || {};
-            if (!filename || !arrayBuffer) {
+            const { filename, arrayBuffer, dataUrl, token } = data || {};
+            if (!filename || (!arrayBuffer && !dataUrl)) {
                 return { success: false, message: 'Missing file data' };
             }
-            return await UploadManager.startUpload({ filename, arrayBuffer, token });
+            return await UploadManager.startUpload({ filename, arrayBuffer, dataUrl, token });
         }
         case 'getTranscripts': {
             const { transcripts = [] } = await chrome.storage.local.get(['transcripts']);

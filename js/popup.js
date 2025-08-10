@@ -299,10 +299,15 @@ const App = {
                     throw new Error('Authentication required');
                 }
 
-                // Read file as ArrayBuffer and delegate to background
-                const arrayBuffer = await file.arrayBuffer();
+                // Read file as data URL (safer across contexts) and delegate to background
+                const dataUrl = await new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result);
+                    reader.onerror = reject;
+                    reader.readAsDataURL(file);
+                });
                 processingMessage.value = 'Transcribing audio...';
-                const res = await BackgroundBridge.startUpload({ filename: file.name || 'audio.m4a', arrayBuffer, token: data.authToken });
+                const res = await BackgroundBridge.startUpload({ filename: file.name || 'audio.m4a', dataUrl, token: data.authToken });
 
                 if (!res?.success) {
                     throw new Error(res?.message || 'Upload failed');

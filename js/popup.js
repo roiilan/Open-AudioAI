@@ -84,7 +84,7 @@ const ApiService = {
         formData.append('nonce', SecurityUtils.generateNonce());
 
         try {
-            const response = await fetch(`${this.baseUrl}/transcribe`, {
+            const response = await fetch(`${this.baseUrl}/transcribe/`, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`,

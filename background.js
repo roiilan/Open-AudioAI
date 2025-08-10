@@ -200,6 +200,9 @@ const UploadManager = (() => {
         formData.append('audio_file', blob, filename);
         formData.append('nonce', crypto.getRandomValues(new Uint32Array(1))[0].toString(16));
 
+        // Diagnostics
+        console.log('[Upload] Starting', { id, filename, size: blob.size, type: blob.type });
+
         const response = await fetch(`${SERVER_BASE_URL}/transcribe/`, {
             method: 'POST',
             headers: token ? { 'Authorization': `Bearer ${token}` } : {},
@@ -207,16 +210,28 @@ const UploadManager = (() => {
         });
 
         let json;
+        if (!response.ok) {
+            const text = await response.text().catch(() => '');
+            console.warn('[Upload] Server not OK', { status: response.status, body: text });
+            try {
+                json = text ? JSON.parse(text) : null;
+            } catch (_) {
+                json = null;
+            }
+            throw new Error(json?.message || `Server error ${response.status}`);
+        }
+
         try {
             json = await response.json();
         } catch (e) {
-            throw new Error(`Invalid server response (${response.status})`);
+            throw new Error(`Invalid JSON response (${response.status})`);
         }
 
-        if (!response.ok || !json.success) {
-            throw new Error(json?.message || `Upload failed (${response.status})`);
+        if (!json.success) {
+            throw new Error(json?.message || 'Transcription failed');
         }
 
+        console.log('[Upload] Success', { id, bytes: blob.size });
         return json; // { success: true, transcript, words }
     }
 

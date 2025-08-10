@@ -14,7 +14,8 @@
     "https://www.googleapis.com/*",
     "https://openidconnect.googleapis.com/*",
     "https://accounts.google.com/*",
-    "https://oauth2.googleapis.com/*"
+    "https://oauth2.googleapis.com/*",
+    "http://localhost:8000/*"
   ],
   "oauth2": {
     "client_id": "302991793664-cdj82f2sgi3830quv3q28mq8ac4ipfnj.apps.googleusercontent.com",

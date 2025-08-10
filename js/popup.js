@@ -105,6 +105,30 @@ const ApiService = {
     }
 };
 
+// Replace direct upload with background upload via messaging and load stored transcripts
+const BackgroundBridge = {
+    startUpload({ filename, arrayBuffer, token }) {
+        return new Promise((resolve) => {
+            chrome.runtime.sendMessage(
+                { action: 'startBackgroundUpload', data: { filename, arrayBuffer, token } },
+                (response) => resolve(response || { success: false, message: 'No response' })
+            );
+        });
+    },
+    async getTranscripts() {
+        return new Promise((resolve) => {
+            chrome.runtime.sendMessage({ action: 'getTranscripts' }, (res) => resolve(res));
+        });
+    }
+};
+
+// Listen for progress from background
+chrome.runtime.onMessage.addListener((request) => {
+    if (request?.action === 'uploadProgress') {
+        // Optionally update UI reactively if needed
+    }
+});
+
 const App = {
     setup() {
         // Reactive state
@@ -119,6 +143,7 @@ const App = {
         const isCopied = ref(false);
         const showTokenWarning = ref(false);
         const fileInput = ref(null);
+        const transcriptsList = ref([]);
 
         // Methods
         const getAuthToken = async (force = false) => {
@@ -265,28 +290,29 @@ const App = {
         const processAudioFile = async (file) => {
             try {
                 SecurityUtils.validateAudioFile(file);
-                
                 isProcessing.value = true;
                 processingMessage.value = 'Uploading audio file...';
                 clearError();
-                
+
                 const data = await chrome.storage.local.get(['authToken']);
                 if (!data.authToken) {
                     throw new Error('Authentication required');
                 }
-                
+
+                // Read file as ArrayBuffer and delegate to background
+                const arrayBuffer = await file.arrayBuffer();
                 processingMessage.value = 'Transcribing audio...';
-                const result = await ApiService.uploadAudio(file, data.authToken);
-                
-                if (result.success) {
-                    transcript.value = SecurityUtils.sanitizeInput(result.transcript);
-                    processingMessage.value = 'Transcription complete!';
-                } else {
-                    throw new Error(result.message || 'Transcription failed');
+                const res = await BackgroundBridge.startUpload({ filename: file.name || 'audio.m4a', arrayBuffer, token: data.authToken });
+
+                if (!res?.success) {
+                    throw new Error(res?.message || 'Upload failed');
                 }
+
+                // Reload transcripts list from storage
+                await loadTranscripts();
+                processingMessage.value = 'Transcription started in background';
             } catch (error) {
                 console.error('File processing failed:', error);
-                
                 if (error.message.includes('tokens') || error.message.includes('quota')) {
                     showTokenWarning.value = true;
                 } else {
@@ -294,9 +320,7 @@ const App = {
                 }
             } finally {
                 isProcessing.value = false;
-                if (fileInput.value) {
-                    fileInput.value.value = '';
-                }
+                if (fileInput.value) fileInput.value.value = '';
             }
         };
 
@@ -374,6 +398,22 @@ const App = {
             }
         };
 
+        const loadTranscripts = async () => {
+            try {
+                const res = await BackgroundBridge.getTranscripts();
+                if (res?.success) {
+                    const list = Array.isArray(res.transcripts) ? res.transcripts : [];
+                    transcriptsList.value = list;
+                    const latestSuccess = list.find(item => item.status === 'success');
+                    if (latestSuccess) {
+                        transcript.value = SecurityUtils.sanitizeInput(latestSuccess.transcript || '');
+                    }
+                }
+            } catch (e) {
+                console.warn('Failed to load transcripts:', e);
+            }
+        };
+
         // Initialize app
         onMounted(async () => {
             try {
@@ -382,11 +422,13 @@ const App = {
                     user.value = data.user;
                     isAuthenticated.value = true;
                 }
+                await loadTranscripts();
             } catch (error) {
                 console.error('Failed to load stored data:', error);
             }
         });
 
+        // Expose methods/state
         return {
             // State
             isAuthenticated,
@@ -400,6 +442,7 @@ const App = {
             isCopied,
             showTokenWarning,
             fileInput,
+            transcriptsList,
             // Methods
             signInWithGoogle,
             logout,
@@ -422,8 +465,23 @@ const App = {
             processingMessage, error, isDragOver, isCopied, showTokenWarning,
             signInWithGoogle, logout, handleFileSelect, 
             handleDrop, handleDragOver, handleDragLeave, copyTranscript, sendToChatGPT, 
-            resetUpload, clearError, closeTokenWarning, openFileDialog
+            resetUpload, clearError, closeTokenWarning, openFileDialog, transcriptsList
         } = this;
+
+        const renderTranscriptItem = (item) => {
+            const statusLabel = item.status === 'pending' ? '⏳' : item.status === 'success' ? '✅' : '❌';
+            const header = `${statusLabel} ${item.filename}`;
+            return h('div', { class: 'saved-item' }, [
+                h('div', { class: 'saved-item-header' }, header),
+                item.status === 'success' && h('textarea', {
+                    class: 'saved-item-text',
+                    readonly: true,
+                    value: item.transcript || ''
+                }),
+                item.status === 'error' && h('div', { class: 'saved-item-error' }, item.error || 'Error'),
+                h('div', { class: 'saved-item-footer' }, new Date(item.createdAt).toLocaleString())
+            ]);
+        };
 
         return h('div', [
             // Header
@@ -546,6 +604,13 @@ const App = {
                             class: 'retry-btn',
                             onClick: clearError
                         }, 'Try Again')
+                    ]),
+
+                    // Saved transcripts list
+                    !isProcessing && h('div', { class: 'saved-section' }, [
+                        h('h3', 'Saved Transcripts'),
+                        transcriptsList.length === 0 && h('p', { class: 'empty' }, 'No transcripts yet.'),
+                        transcriptsList.length > 0 && h('div', { class: 'saved-list' }, transcriptsList.map(renderTranscriptItem))
                     ])
                 ])
             ]),

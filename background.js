@@ -253,7 +253,7 @@ const UploadManager = (() => {
         }
 
         // New format: { code: 1 | 2, transcript?: string, words?: Array }
-        if (json?.code !== 1) {
+        if (Number(json?.code) !== 1) {
             throw new Error(json?.message || 'Transcription failed');
         }
 

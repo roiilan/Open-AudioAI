@@ -375,7 +375,7 @@ const App = {
                 const result = await ApiService.uploadAudio(file, data.authToken);
 
                 // New format: { code: 1 | 2, transcript?: string, words?: Array }
-                if (!result || result.code !== 1) {
+                if (!result || Number(result.code) !== 1) {
                     throw new Error(result?.message || 'Upload failed');
                 }
 
@@ -389,8 +389,10 @@ const App = {
                     words: Array.isArray(result.words) ? result.words : [],
                     error: null
                 }) : t);
+                // Optimistically update UI
+                transcriptsList.value = updated;
+                transcript.value = combinedText;
                 await chrome.storage.local.set({ transcripts: updated });
-                await loadTranscripts();
             } catch (error) {
                 console.error('File processing failed:', error);
                 if (error.message.includes('tokens') || error.message.includes('quota')) {

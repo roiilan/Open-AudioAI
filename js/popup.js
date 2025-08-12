@@ -105,6 +105,19 @@ const ApiService = {
     }
 };
 
+// Helper: combine transcript text and words into single text for display/copy
+function buildCombinedTranscript(transcript, words) {
+    try {
+        const payload = {
+            transcript: transcript || '',
+            words: Array.isArray(words) ? words : []
+        };
+        return JSON.stringify(payload, null, 2);
+    } catch (e) {
+        return (typeof transcript === 'string' ? transcript : '') + '\n\n[words unavailable]';
+    }
+}
+
 // Replace direct upload with background upload via messaging and load stored transcripts
 const BackgroundBridge = {
     startUpload(data) {
@@ -334,17 +347,19 @@ const App = {
                 // Upload directly to server with the File to support large sizes
                 const result = await ApiService.uploadAudio(file, data.authToken);
 
-                if (!result || result.success !== true) {
+                // New format: { code: 1 | 2, transcript?: string, words?: Array }
+                if (!result || result.code !== 1) {
                     throw new Error(result?.message || 'Upload failed');
                 }
 
                 // Update the record to success
                 const { transcripts = [] } = await chrome.storage.local.get(['transcripts']);
+                const combinedText = buildCombinedTranscript(result.transcript, result.words);
                 const updated = transcripts.map(t => t.id === id ? ({
                     ...t,
                     status: 'success',
-                    transcript: result.transcript || '',
-                    words: result.words || [],
+                    transcript: combinedText,
+                    words: Array.isArray(result.words) ? result.words : [],
                     error: null
                 }) : t);
                 await chrome.storage.local.set({ transcripts: updated });
@@ -443,7 +458,7 @@ const App = {
 
         const loadToReady = (item) => {
             if (item.status === 'success') {
-                transcript.value = SecurityUtils.sanitizeInput(item.transcript || '');
+                transcript.value = item.transcript || '';
             }
         };
 

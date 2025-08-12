@@ -179,6 +179,20 @@ const UploadManager = (() => {
         };
     }
 
+    // Combine transcript text and words array into a single string for display/copy
+    function combineTranscriptAndWords(transcript, words) {
+        try {
+            const combinedObject = {
+                transcript: transcript || '',
+                words: Array.isArray(words) ? words : []
+            };
+            return JSON.stringify(combinedObject, null, 2);
+        } catch (_) {
+            const safeTranscript = typeof transcript === 'string' ? transcript : '';
+            return safeTranscript + '\n\n[words unavailable]';
+        }
+    }
+
     async function toBlobFromPayload({ arrayBuffer, dataUrl, mime = 'audio/m4a' }) {
         try {
             if (dataUrl && typeof dataUrl === 'string' && dataUrl.startsWith('data:')) {
@@ -227,12 +241,13 @@ const UploadManager = (() => {
             throw new Error(`Invalid JSON response (${response.status})`);
         }
 
-        if (!json.success) {
+        // New format: { code: 1 | 2, transcript?: string, words?: Array }
+        if (json?.code !== 1) {
             throw new Error(json?.message || 'Transcription failed');
         }
 
         console.log('[Upload] Success', { id, bytes: blob.size });
-        return json; // { success: true, transcript, words }
+        return json; // { code: 1, transcript, words }
     }
 
     async function startUpload({ filename, arrayBuffer, dataUrl, token }) {
@@ -243,13 +258,14 @@ const UploadManager = (() => {
 
         try {
             const { transcript, words } = await uploadPayload({ id, filename, arrayBuffer, dataUrl, token });
-            const successRecord = buildRecord({ id, filename, status: 'success', transcript, words });
+            const combinedText = combineTranscriptAndWords(transcript, words);
+            const successRecord = buildRecord({ id, filename, status: 'success', transcript: combinedText, words });
 
             const { transcripts = [] } = await chrome.storage.local.get(['transcripts']);
             const updated = transcripts.map(t => t.id === id ? successRecord : t);
             await chrome.storage.local.set({ transcripts: updated });
 
-            notifyProgress({ id, status: 'success', transcript });
+            notifyProgress({ id, status: 'success', transcript: combinedText });
             return { success: true, id };
         } catch (error) {
             const errorRecord = buildRecord({ id, filename, status: 'error', error: error.message });

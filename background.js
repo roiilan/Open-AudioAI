@@ -223,9 +223,9 @@ const UploadManager = (() => {
             body: formData,
         });
 
+        const text = await response.text().catch(() => '');
         let json;
         if (!response.ok) {
-            const text = await response.text().catch(() => '');
             console.warn('[Upload] Server not OK', { status: response.status, body: text });
             try {
                 json = text ? JSON.parse(text) : null;
@@ -235,10 +235,21 @@ const UploadManager = (() => {
             throw new Error(json?.message || `Server error ${response.status}`);
         }
 
+        // Normalize 200 OK responses
         try {
-            json = await response.json();
-        } catch (e) {
-            throw new Error(`Invalid JSON response (${response.status})`);
+            json = text ? JSON.parse(text) : {};
+        } catch (_) {
+            json = null;
+        }
+
+        if (!json || typeof json !== 'object') {
+            json = { code: 1, transcript: text || '', words: [] };
+        } else if (typeof json.code === 'undefined') {
+            json = {
+                code: 1,
+                transcript: json.transcript || text || '',
+                words: Array.isArray(json.words) ? json.words : []
+            };
         }
 
         // New format: { code: 1 | 2, transcript?: string, words?: Array }

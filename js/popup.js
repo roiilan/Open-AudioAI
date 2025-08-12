@@ -92,12 +92,39 @@ const ApiService = {
                 body: formData
             });
 
+            const text = await response.text();
+
             if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+                let errorMessage = `HTTP error! status: ${response.status}`;
+                try {
+                    const errObj = text ? JSON.parse(text) : null;
+                    if (errObj?.message) errorMessage = errObj.message;
+                } catch (_) {}
+                throw new Error(errorMessage);
             }
 
-            return await response.json();
+            // Normalize 200 OK responses
+            try {
+                const obj = text ? JSON.parse(text) : {};
+                if (typeof obj === 'object' && obj !== null) {
+                    // New format preferred
+                    if (typeof obj.code !== 'undefined') {
+                        return obj;
+                    }
+                    // Legacy or partial: assume success
+                    return {
+                        code: 1,
+                        transcript: obj.transcript || text || '',
+                        words: Array.isArray(obj.words) ? obj.words : []
+                    };
+                }
+            } catch (_) {
+                // Not JSON; treat whole body as transcript
+                return { code: 1, transcript: text || '', words: [] };
+            }
+
+            // Fallback
+            return { code: 1, transcript: text || '', words: [] };
         } catch (error) {
             console.error('Audio upload failed:', error);
             throw error;

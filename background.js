@@ -236,8 +236,24 @@ const UploadManager = (() => {
         }
 
         // Normalize 200 OK responses
+        const parsePossiblyPythonJson = (raw) => {
+            if (!raw || typeof raw !== 'string') return null;
+            const trimmed = raw.trim();
+            if (!(trimmed.startsWith('{') || trimmed.startsWith('['))) return null;
+            try { return JSON.parse(trimmed); } catch (_) {}
+            try {
+                let normalized = trimmed
+                    .replace(/'([^'\\]*?)'\s*:/g, '"$1":')
+                    .replace(/:\s*'([^'\\]*?)'/g, ': "$1"')
+                    .replace(/\bTrue\b/g, 'true')
+                    .replace(/\bFalse\b/g, 'false')
+                    .replace(/\bNone\b/g, 'null');
+                return JSON.parse(normalized);
+            } catch (_) { return null; }
+        };
+
         try {
-            json = text ? JSON.parse(text) : {};
+            json = text ? (parsePossiblyPythonJson(text) ?? {}) : {};
         } catch (_) {
             json = null;
         }

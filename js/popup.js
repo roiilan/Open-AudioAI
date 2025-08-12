@@ -52,6 +52,32 @@ const SecurityUtils = {
 const ApiService = {
     baseUrl: 'http://localhost:8000', // Replace with actual server URL
 
+    // Attempt to parse server response that may be Python-style dict (single quotes)
+    _parsePossiblyPythonJson(text) {
+        if (!text || typeof text !== 'string') return null;
+        const trimmed = text.trim();
+        // Quick exit if it doesn't look like object/array
+        if (!(trimmed.startsWith('{') || trimmed.startsWith('['))) return null;
+        // First try standard JSON
+        try {
+            return JSON.parse(trimmed);
+        } catch (_) {}
+        // Try to normalize common Python-ish to JSON
+        try {
+            let normalized = trimmed
+                // Replace single quotes around keys/strings with double quotes
+                .replace(/'([^'\\]*?)'\s*:/g, '"$1":') // keys
+                .replace(/:\s*'([^'\\]*?)'/g, ': "$1"') // string values
+                // Booleans/None
+                .replace(/\bTrue\b/g, 'true')
+                .replace(/\bFalse\b/g, 'false')
+                .replace(/\bNone\b/g, 'null');
+            return JSON.parse(normalized);
+        } catch (_) {
+            return null;
+        }
+    },
+
     async makeSecureRequest(endpoint, data, token) {
         const nonce = SecurityUtils.generateNonce();
         
@@ -105,7 +131,8 @@ const ApiService = {
 
             // Normalize 200 OK responses
             try {
-                const obj = text ? JSON.parse(text) : {};
+                // Try strict JSON first, then Python-like JSON
+                const obj = text ? (this._parsePossiblyPythonJson(text) ?? {}) : {};
                 if (typeof obj === 'object' && obj !== null) {
                     // New format preferred
                     if (typeof obj.code !== 'undefined') {
@@ -621,6 +648,22 @@ const App = {
                 await loadTranscripts();
             } catch (error) {
                 console.error('Failed to load stored data:', error);
+            }
+
+            // Keep UI in sync when background updates transcripts
+            try {
+                chrome.storage.onChanged.addListener((changes, area) => {
+                    if (area === 'local' && changes.transcripts) {
+                        const list = Array.isArray(changes.transcripts.newValue) ? changes.transcripts.newValue : [];
+                        transcriptsList.value = list;
+                        const latestSuccess = list.find(item => item.status === 'success');
+                        if (latestSuccess) {
+                            transcript.value = latestSuccess.transcript || '';
+                        }
+                    }
+                });
+            } catch (e) {
+                console.warn('Failed to attach storage change listener:', e);
             }
         });
 

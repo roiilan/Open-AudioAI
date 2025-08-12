@@ -558,7 +558,7 @@ const App = {
                     transcriptsList.value = list;
                     const latestSuccess = list.find(item => item.status === 'success');
                     if (latestSuccess) {
-                        transcript.value = SecurityUtils.sanitizeInput(latestSuccess.transcript || '');
+                        transcript.value = latestSuccess.transcript || '';
                     }
                 }
             } catch (e) {

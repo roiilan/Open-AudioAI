@@ -263,10 +263,8 @@
             return;
         }
 
-        // Prepare transcript with context
-        const formattedTranscript = `Please analyze this audio transcript:
-
-${sanitizedTranscript}`;
+        // Prepare transcript without extra prefixes
+        const formattedTranscript = sanitizedTranscript;
 
         // Insert transcript
         const success = ChatGPTIntegration.insertText(chatInput, formattedTranscript);

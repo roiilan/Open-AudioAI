@@ -165,7 +165,24 @@ const BackgroundBridge = {
 // Listen for progress from background
 chrome.runtime.onMessage.addListener((request) => {
     if (request?.action === 'uploadProgress') {
-        // Optionally update UI reactively if needed
+        const data = request.data || {};
+        try {
+            if (data.status === 'success') {
+                // Replace pending record if exists and set visible transcript
+                // We cannot access refs directly here; rely on window.App if exposed or use storage refresh
+                chrome.storage.local.get(['transcripts']).then(({ transcripts = [] }) => {
+                    const updated = transcripts.map(t => t.id === data.id ? ({
+                        ...t,
+                        status: 'success',
+                        transcript: typeof data.transcript === 'string' ? data.transcript : (t.transcript || ''),
+                        error: null
+                    }) : t);
+                    chrome.storage.local.set({ transcripts: updated });
+                });
+            }
+        } catch (e) {
+            console.warn('Progress handler error:', e);
+        }
     }
 });
 
@@ -382,13 +399,38 @@ const App = {
                 // Update the record to success
                 const { transcripts = [] } = await chrome.storage.local.get(['transcripts']);
                 const combinedText = buildCombinedTranscript(result.transcript, result.words);
-                const updated = transcripts.map(t => t.id === id ? ({
-                    ...t,
-                    status: 'success',
-                    transcript: combinedText,
-                    words: Array.isArray(result.words) ? result.words : [],
-                    error: null
-                }) : t);
+                let found = false;
+                let updated = transcripts.map(t => {
+                    if (t.id === id) {
+                        found = true;
+                        return {
+                            ...t,
+                            status: 'success',
+                            transcript: combinedText,
+                            words: Array.isArray(result.words) ? result.words : [],
+                            error: null
+                        };
+                    }
+                    return t;
+                });
+                if (!found) {
+                    // Fallback: replace first pending or prepend new record
+                    const pendingIdx = updated.findIndex(t => t.status === 'pending');
+                    const successRecord = {
+                        id,
+                        filename: file.name || 'audio.m4a',
+                        createdAt: Date.now(),
+                        status: 'success',
+                        transcript: combinedText,
+                        words: Array.isArray(result.words) ? result.words : [],
+                        error: null
+                    };
+                    if (pendingIdx !== -1) {
+                        updated[pendingIdx] = successRecord;
+                    } else {
+                        updated = [successRecord, ...updated];
+                    }
+                }
                 // Optimistically update UI
                 transcriptsList.value = updated;
                 transcript.value = combinedText;

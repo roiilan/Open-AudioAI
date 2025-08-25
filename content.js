@@ -230,6 +230,26 @@
         }
     });
 
+    // Process any pending transcript saved in storage (used when opening ChatGPT tab)
+    async function processPendingTranscript() {
+        try {
+            const { pendingTranscript } = await chrome.storage.local.get(['pendingTranscript']);
+            if (pendingTranscript && typeof pendingTranscript === 'string' && pendingTranscript.trim()) {
+                let chatInput = ChatGPTIntegration.findChatInput();
+                if (!chatInput) {
+                    chatInput = await ChatGPTIntegration.waitForChatInput();
+                }
+                if (chatInput) {
+                    await handleInsertTranscript(pendingTranscript);
+                    await chrome.storage.local.remove(['pendingTranscript']);
+                    ChatGPTIntegration.showNotification('✓ Transcript inserted from extension', 'success');
+                }
+            }
+        } catch (e) {
+            console.warn('Failed processing pending transcript:', e);
+        }
+    }
+
     // Handle transcript insertion
     async function handleInsertTranscript(transcript) {
         // Security: Validate transcript
@@ -288,6 +308,8 @@
                 setTimeout(() => {
                     // Re-check if we can find chat input on new page
                     ChatGPTIntegration.findChatInput();
+                    // Attempt to insert any pending transcript on navigation
+                    processPendingTranscript();
                 }, 1000);
             }
         });
@@ -300,9 +322,13 @@
 
     // Initialize when DOM is ready
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initializePageMonitoring);
+        document.addEventListener('DOMContentLoaded', () => {
+            initializePageMonitoring();
+            processPendingTranscript();
+        });
     } else {
         initializePageMonitoring();
+        processPendingTranscript();
     }
 
     // Console message for debugging (remove in production)

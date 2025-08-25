@@ -60,7 +60,11 @@ const ApiService = {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`,
+                    // Prefer ID token as Bearer for server-side verification
+                    'Authorization': `Bearer ${token?.idToken || token}`,
+                    // Provide access token separately for optional Google API calls on server
+                    ...(token?.accessToken ? { 'X-Goog-Access-Token': token.accessToken } : {}),
+                    'X-Auth-Provider': 'google',
                     'X-Nonce': nonce,
                     
                 },
@@ -87,7 +91,10 @@ const ApiService = {
             const response = await fetch(`${this.baseUrl}/transcribe/`, {
                 method: 'POST',
                 headers: {
-                    'Authorization': `Bearer ${token}`
+                    // Prefer ID token as Bearer for server-side verification
+                    'Authorization': `Bearer ${token?.idToken || token}`,
+                    ...(token?.accessToken ? { 'X-Goog-Access-Token': token.accessToken } : {}),
+                    'X-Auth-Provider': 'google'
                 },
                 body: formData
             });
@@ -228,14 +235,18 @@ const App = {
                     try {
                         const data = await chrome.storage.local.get(['authToken']);
                         if (data && data.authToken) {
-                            await chrome.identity.removeCachedAuthToken({ token: data.authToken });
+                            const tokenToClear = typeof data.authToken === 'string' ? data.authToken : data.authToken.accessToken;
+                            if (tokenToClear) {
+                                await chrome.identity.removeCachedAuthToken({ token: tokenToClear });
+                            }
                         }
                     } catch (err) {
                         console.warn('Failed to clear cached auth token (non-fatal):', err);
                     }
                 }
 
-                const token = await new Promise((resolve, reject) => {
+                // Get Google OAuth access token (for userinfo and optional server needs)
+                const accessToken = await new Promise((resolve, reject) => {
                     try {
                         chrome.identity.getAuthToken({ interactive: true }, (t) => {
                             if (chrome.runtime.lastError || !t) {
@@ -248,8 +259,41 @@ const App = {
                     }
                 });
 
-                await chrome.storage.local.set({ authToken: token });
-                return token;
+                // Exchange for Google ID token via OAuth flow for backend verification
+                const idToken = await new Promise((resolve, reject) => {
+                    try {
+                        const redirectUri = chrome.identity.getRedirectURL('oauth2');
+                        const params = new URLSearchParams({
+                            client_id: chrome.runtime.getManifest().oauth2.client_id,
+                            response_type: 'id_token',
+                            scope: 'openid email profile',
+                            redirect_uri: redirectUri,
+                            prompt: 'none',
+                            nonce: SecurityUtils.generateNonce()
+                        });
+                        const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+                        chrome.identity.launchWebAuthFlow({ url: authUrl, interactive: true }, (responseUrl) => {
+                            if (chrome.runtime.lastError || !responseUrl) {
+                                return reject(chrome.runtime.lastError || new Error('ID token flow failed'));
+                            }
+                            try {
+                                const hash = responseUrl.split('#')[1] || '';
+                                const parsed = new URLSearchParams(hash);
+                                const idTok = parsed.get('id_token');
+                                if (!idTok) return reject(new Error('No id_token in response'));
+                                resolve(idTok);
+                            } catch (e) {
+                                reject(e);
+                            }
+                        });
+                    } catch (e) {
+                        reject(e);
+                    }
+                });
+
+                const tokenBundle = { accessToken, idToken };
+                await chrome.storage.local.set({ authToken: tokenBundle });
+                return tokenBundle;
             } catch (e) {
                 console.error('getAuthToken failed:', e);
                 throw e;
@@ -278,7 +322,7 @@ const App = {
             try {
                 const response = await fetch('https://openidconnect.googleapis.com/v1/userinfo', {
                     headers: {
-                        'Authorization': `Bearer ${token}`
+                        'Authorization': `Bearer ${token?.accessToken || token}`
                     }
                 });
 
@@ -314,14 +358,17 @@ const App = {
                 const data = await chrome.storage.local.get(['authToken']);
                 if (data.authToken) {
                     try {
-                        await chrome.identity.removeCachedAuthToken({ token: data.authToken });
+                        const tokenToClear = typeof data.authToken === 'string' ? data.authToken : data.authToken.accessToken;
+                        if (tokenToClear) {
+                            await chrome.identity.removeCachedAuthToken({ token: tokenToClear });
+                        }
                     } catch (_) {}
 
                     try {
                         await fetch('https://oauth2.googleapis.com/revoke', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                            body: `token=${encodeURIComponent(data.authToken)}`
+                            body: `token=${encodeURIComponent(typeof data.authToken === 'string' ? data.authToken : (data.authToken.accessToken || ''))}`
                         });
                     } catch (_) {}
                 }

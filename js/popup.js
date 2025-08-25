@@ -205,6 +205,7 @@ const App = {
         const editingId = ref(null);
         const editingText = ref('');
         const editingFilename = ref('');
+        const selectedIds = ref([]);
 
         // Extend BackgroundBridge methods
         BackgroundBridge.deleteTranscript = (id) => new Promise((resolve) => {
@@ -563,6 +564,60 @@ const App = {
             }
         };
 
+        // Multi-select helpers
+        const isSelected = (id) => selectedIds.value.includes(id);
+        const toggleSelectItem = (id, event) => {
+            if (event) event.stopPropagation();
+            if (isSelected(id)) {
+                selectedIds.value = selectedIds.value.filter(x => x !== id);
+            } else {
+                selectedIds.value = [...selectedIds.value, id];
+            }
+        };
+        const selectAll = () => {
+            const selectable = transcriptsList.value.filter(t => t.status === 'success').map(t => t.id);
+            if (selectable.length > 0 && selectedIds.value.length === selectable.length) {
+                selectedIds.value = [];
+            } else {
+                selectedIds.value = selectable;
+            }
+        };
+
+        const buildMultiTranscriptMessage = (items) => {
+            const line = '_______________';
+            const parts = ['Attaching a transcript of audio files:'];
+            for (const item of items) {
+                const name = (item.filename || 'Unknown').toString();
+                const text = typeof item.transcript === 'string' ? item.transcript : '';
+                parts.push(line);
+                parts.push(`Audio Name: ${name}`);
+                parts.push(`Transcript: ${text}`);
+            }
+            parts.push('______________');
+            return parts.join('\n');
+        };
+
+        const sendSelectedToChatGPT = async () => {
+            try {
+                const selected = transcriptsList.value.filter(t => selectedIds.value.includes(t.id) && t.status === 'success');
+                if (selected.length === 0) return;
+                const message = buildMultiTranscriptMessage(selected);
+
+                const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+                if (tab.url && (tab.url.includes('chat.openai.com') || tab.url.includes('chatgpt.com'))) {
+                    await chrome.tabs.sendMessage(tab.id, { action: 'insertTranscript', transcript: message });
+                    window.close();
+                } else {
+                    chrome.tabs.create({ url: 'https://chat.openai.com/', active: true });
+                    await chrome.storage.local.set({ pendingTranscript: message });
+                    window.close();
+                }
+            } catch (e) {
+                console.error('Failed to send selected to ChatGPT:', e);
+                showError('Send Failed', 'Failed to send selected transcripts to ChatGPT.');
+            }
+        };
+
         const resetUpload = () => {
             transcript.value = '';
             isProcessing.value = false;
@@ -643,6 +698,7 @@ const App = {
             editingId,
             editingText,
             editingFilename,
+            selectedIds,
             // Methods
             signInWithGoogle,
             logout,
@@ -653,6 +709,7 @@ const App = {
             copyTranscript,
             copySavedTranscript,
             sendToChatGPT,
+            sendSelectedToChatGPT,
             resetUpload,
             clearError,
             closeTokenWarning,
@@ -663,7 +720,10 @@ const App = {
             deleteSaved,
             loadToReady,
             updateEditingText,
-            updateEditingFilename
+            updateEditingFilename,
+            isSelected,
+            toggleSelectItem,
+            selectAll
         };
     },
 
@@ -698,6 +758,14 @@ const App = {
             if (item.status === 'pending') {
                 headerChildren.push(h('span', { class: 'inline-spinner', 'aria-label': 'Loading' }));
             }
+            headerChildren.push(h('input', {
+                type: 'checkbox',
+                class: 'saved-item-checkbox',
+                checked: isSelected(item.id),
+                disabled: item.status !== 'success',
+                onClick: (e) => e.stopPropagation(),
+                onChange: (e) => toggleSelectItem(item.id, e)
+            }));
             headerChildren.push(h('span', { class: 'filename-text' }, `${statusLabel} ${item.filename}`));
 
             return h('div', { class: 'saved-item', onClick: () => loadToReady(item) }, [
@@ -855,6 +923,24 @@ const App = {
                     h('div', { class: 'saved-section' }, [
                         h('h3', 'Saved Transcripts'),
                         transcriptsList.length === 0 && h('p', { class: 'empty' }, 'No transcripts yet.'),
+                        transcriptsList.length > 0 && h('div', { class: 'selection-toolbar' }, [
+                            h('label', { class: 'select-all' }, [
+                                h('input', {
+                                    type: 'checkbox',
+                                    checked: (function() {
+                                        const selectable = transcriptsList.filter(t => t.status === 'success').map(t => t.id);
+                                        return selectable.length > 0 && selectedIds.length === selectable.length;
+                                    })(),
+                                    onChange: selectAll
+                                }),
+                                h('span', 'Select All')
+                            ]),
+                            h('button', {
+                                class: 'send-selected-btn',
+                                disabled: selectedIds.length === 0,
+                                onClick: sendSelectedToChatGPT
+                            }, selectedIds.length > 0 ? `🚀 Send ${selectedIds.length} Selected to ChatGPT` : '🚀 Send Selected to ChatGPT')
+                        ]),
                         transcriptsList.length > 0 && h('div', { class: 'saved-list' }, transcriptsList.map(renderTranscriptItem))
                     ])
                 ])

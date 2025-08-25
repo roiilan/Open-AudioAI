@@ -219,7 +219,11 @@ const UploadManager = (() => {
 
         const response = await fetch(`${SERVER_BASE_URL}/transcribe/`, {
             method: 'POST',
-            headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+            headers: token ? {
+                'Authorization': `Bearer ${token?.idToken || token}`,
+                ...(token?.accessToken ? { 'X-Goog-Access-Token': token.accessToken } : {}),
+                'X-Auth-Provider': 'google'
+            } : {},
             body: formData,
         });
 
@@ -351,7 +355,17 @@ async function handleMessage(request, sender) {
             if (!filename || (!hasAb && !hasDu)) {
                 return { success: false, message: 'Missing file data' };
             }
-            return await UploadManager.startUpload({ filename, arrayBuffer, dataUrl, token });
+            // Ensure we always include stored tokens if not provided by caller
+            let effectiveToken = token;
+            if (!effectiveToken) {
+                try {
+                    const stored = await chrome.storage.local.get(['authToken']);
+                    if (stored && stored.authToken) {
+                        effectiveToken = stored.authToken;
+                    }
+                } catch (_) {}
+            }
+            return await UploadManager.startUpload({ filename, arrayBuffer, dataUrl, token: effectiveToken });
         }
         case 'getTranscripts': {
             const { transcripts = [] } = await chrome.storage.local.get(['transcripts']);
@@ -452,10 +466,17 @@ async function checkApiHealth() {
         // Replace with your actual server URL
         const serverUrl = 'http://localhost:8000';
         
+        // Include auth headers so server can verify
+        const { authToken } = await chrome.storage.local.get(['authToken']);
         const response = await fetch(`${serverUrl}/health`, {
             method: 'GET',
             headers: {
-                'X-Extension-Version': chrome.runtime.getManifest().version
+                'X-Extension-Version': chrome.runtime.getManifest().version,
+                ...(authToken ? {
+                    'Authorization': `Bearer ${authToken?.idToken || authToken}`,
+                    ...(authToken?.accessToken ? { 'X-Goog-Access-Token': authToken.accessToken } : {}),
+                    'X-Auth-Provider': 'google'
+                } : {})
             }
         });
         
